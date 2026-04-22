@@ -240,11 +240,13 @@ body { font-family: -apple-system, 'Noto Sans KR', sans-serif; background: var(-
   </div>
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
     <div class="topbar-right" id="todayStatus">오늘 발주 0건</div>
+    <div id="dlvBadge" style="font-size:11px;color:#F5A623;display:none"></div>
     <div id="syncStatus" style="font-size:11px;color:#888;cursor:pointer" onclick="manualSync()">☁ 동기화</div>
   </div>
 </div>
-<div class="tabs">
+<div class="tabs" id="mainTabs">
   <div class="tab active" data-tab="order">발주 입력</div>
+  <div class="tab" data-tab="delivery" id="tabDelivery">입고 확인</div>
   <div class="tab" data-tab="history">발주 내역</div>
   <div class="tab" data-tab="stats">통계 분석</div>
   <div class="tab" data-tab="prices">가격 변동</div>
@@ -321,6 +323,9 @@ window.addEventListener('appinstalled', ()=>{
 const SK_ING='rzr_ing_v9', SK_HIST='rzr_hist_v9', SK_PH='rzr_ph_v9';
 const DEFAULT_CATS=['야채','행운','특공대','김치A','김치B','안성','주류','쌀','물수건','음료수'];
 const SK_CATS='rzr_cats_v9';
+const SK_PHONES='rzr_phones_v9';   // {카테고리: 전화번호}
+const SK_SETTINGS='rzr_settings_v9'; // {storeName, greeting, closing}
+const SK_DELIVERY='rzr_delivery_v9'; // 입고대기 목록
 const SHEETS_URL='https://script.google.com/macros/s/AKfycbybhqC4i7Co4wsGTxeKwyeCHyBC63oDvEzuhLF64lTWfVvsvNvU_DGYxmzQ9k1Sb_po/exec';
 
 async function syncToSheets(){
@@ -367,6 +372,9 @@ const DEFAULT_ING=[
 ];
 
 let ingredients=[], history=[], priceHist={};
+let catPhones={};  // {카테고리명: 전화번호}
+let appSettings={storeName:'범방동영진돼지국밥', greeting:'안녕하세요', closing:'부탁드립니다\n감사합니다~'};
+let deliveryList=[]; // [{orderId, orderDate, items:[{name,cat,unit,qty,actualPrice}], confirmed}]
 let curTab='order', curCat='전체', histOpenIds=new Set(), statsPeriod='1년', histMonth='', statsCustomFrom='', statsCustomTo='';
 let numpadTarget=null, numpadVal='', phFilter='all';
 
@@ -398,6 +406,9 @@ function load(){
   try{const r=lsGet(SK_ING);ingredients=r?JSON.parse(r):DEFAULT_ING.map(x=>({...x}));}catch{ingredients=DEFAULT_ING.map(x=>({...x}));}
   try{const r=lsGet(SK_HIST);history=r?JSON.parse(r):[];}catch{history=[];}
   try{const r=lsGet(SK_PH);priceHist=r?JSON.parse(r):{};}catch{priceHist={};}
+  try{const r=lsGet(SK_PHONES);catPhones=r?JSON.parse(r):{};}catch{catPhones={};}
+  try{const r=lsGet(SK_SETTINGS);if(r){const s=JSON.parse(r);appSettings={...appSettings,...s};}}catch{}
+  try{const r=lsGet(SK_DELIVERY);deliveryList=r?JSON.parse(r):[];}catch{deliveryList=[];}
   const now=new Date();histMonth=`${now.getFullYear()}-${pad(now.getMonth()+1)}`;
   updateTopbar();render();
   setSyncStatus('⟳ 불러오는 중...','#F5A623');
@@ -410,6 +421,9 @@ function load(){
 const saveIng=()=>{lsSet(SK_ING,JSON.stringify(ingredients));scheduleSave();};
 const saveHist=()=>{lsSet(SK_HIST,JSON.stringify(history));scheduleSave();};
 const savePH=()=>{lsSet(SK_PH,JSON.stringify(priceHist));scheduleSave();};
+const savePhones=()=>{lsSet(SK_PHONES,JSON.stringify(catPhones));};
+const saveSettings=()=>{lsSet(SK_SETTINGS,JSON.stringify(appSettings));};
+const saveDelivery=()=>{lsSet(SK_DELIVERY,JSON.stringify(deliveryList));};
 
 let saveTimer=null;
 function scheduleSave(){
@@ -446,13 +460,21 @@ function updateTopbar(){
   const now=new Date();
   document.getElementById('topDate').textContent=`${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} (${['일','월','화','수','목','금','토'][now.getDay()]})`;
   const cnt=history.filter(h=>new Date(h.date).toDateString()===now.toDateString()).length;
+  const pendingDlv=deliveryList.filter(d=>!d.confirmed).length;
   document.getElementById('todayStatus').textContent=cnt>0?`오늘 발주 ${cnt}건 완료`:'오늘 발주 0건';
+  const dlvBadge=document.getElementById('dlvBadge');
+  if(dlvBadge){dlvBadge.textContent=pendingDlv>0?`입고대기 ${pendingDlv}건`:'';dlvBadge.style.display=pendingDlv>0?'block':'none';}
 }
 
 function render(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===curTab));
+  // 입고대기 배지
+  const pendingCnt=deliveryList.filter(d=>!d.confirmed).length;
+  const tabDlv=document.getElementById('tabDelivery');
+  if(tabDlv)tabDlv.textContent=pendingCnt>0?`입고 확인 ${pendingCnt}`:'입고 확인';
   const c=document.getElementById('tabContent');
   if(curTab==='order')c.innerHTML=buildOrder();
+  else if(curTab==='delivery')c.innerHTML=buildDelivery();
   else if(curTab==='history')c.innerHTML=buildHist();
   else if(curTab==='stats')c.innerHTML=buildStats();
   else c.innerHTML=buildPrices();
@@ -498,6 +520,67 @@ function buildOrder(){
     <div><div class="ctl">발주 확정 금액</div><div class="ctv">${fmt(total)}</div></div>
     <button class="confirm-btn" id="confBtn" ${wq===0?'disabled':''}>발주 확정 →</button>
   </div>`;
+}
+
+/* DELIVERY CONFIRMATION TAB */
+function buildDelivery(){
+  const pending=deliveryList.filter(d=>!d.confirmed);
+  const done=deliveryList.filter(d=>d.confirmed).slice(0,10);
+  let pendingHtml='';
+  if(pending.length===0){
+    pendingHtml='<div class="no-h">입고 대기 중인 발주가 없어요</div>';
+  } else {
+    pendingHtml=pending.map((d,di)=>{
+      const dt=new Date(d.orderDate);
+      const dtStr=`${dt.getMonth()+1}/${dt.getDate()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+      const rows=d.items.map((it,ii)=>`
+        <div style="display:grid;grid-template-columns:1fr 0.5fr 0.7fr;gap:6px;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border)">
+          <div>
+            <div style="font-size:14px;font-weight:500;color:var(--text)">${it.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${it.cat} · ${it.qty}${it.unit}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text2);text-align:center">${it.actualPrice!=null?Number(it.actualPrice).toLocaleString()+'원':'미입력'}</div>
+          <button class="dlv-price-btn" data-di="${di}" data-ii="${ii}" style="padding:8px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:12px;color:var(--amber);cursor:pointer;font-weight:500">
+            ${it.actualPrice!=null?'수정':'단가 입력'}
+          </button>
+        </div>`).join('');
+      const allEntered=d.items.every(it=>it.actualPrice!=null);
+      return`<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <div style="font-size:13px;font-weight:500;color:var(--text)">발주 ${dtStr}</div>
+            <div style="font-size:11px;color:var(--text2)">${d.items.length}개 품목</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="dlv-del-btn" data-di="${di}" style="padding:6px 10px;border-radius:var(--r-md);border:0.5px solid #f09595;background:transparent;font-size:12px;color:#a32d2d;cursor:pointer">삭제</button>
+            ${allEntered?`<button class="dlv-confirm-btn" data-di="${di}" style="padding:6px 12px;border-radius:var(--r-md);border:none;background:#1C1A17;color:#F5EDD8;font-size:12px;font-weight:500;cursor:pointer">입고 완료</button>`:''}
+          </div>
+        </div>
+        ${rows}
+        ${allEntered?`<div style="margin-top:10px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--r-md);font-size:13px;color:var(--amber);font-weight:500">
+          실 입고금액: ${Number(d.items.reduce((s,it)=>s+(it.actualPrice||0)*it.qty,0)).toLocaleString()}원
+        </div>`:'<div style="margin-top:8px;font-size:12px;color:var(--text2)">단가 입력 후 입고 완료 버튼이 나타나요</div>'}
+      </div>`;
+    }).join('');
+  }
+  const doneHtml=done.length>0?`
+    <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:4px">최근 입고 완료</div>
+    ${done.map(d=>{
+      const dt=new Date(d.orderDate);
+      const total=d.items.reduce((s,it)=>s+(it.actualPrice||0)*it.qty,0);
+      return`<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:12px 14px;margin-bottom:8px;opacity:0.7">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px;color:var(--text2)">${dt.getMonth()+1}/${dt.getDate()} 발주 · ${d.items.length}개</div>
+          <div style="font-size:13px;font-weight:500;color:var(--text)">${total>0?Number(total).toLocaleString()+'원':'단가 미입력'}</div>
+        </div>
+      </div>`;
+    }).join('')}`:'';
+  return`<div style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:13px;font-weight:500;color:var(--text)">입고 대기 ${pending.length}건</div>
+    ${pending.length>0?`<button id="dlvClearAll" style="font-size:12px;padding:4px 10px;border-radius:var(--r-md);border:0.5px solid #f09595;background:transparent;color:#a32d2d;cursor:pointer">전체 삭제</button>`:''}
+  </div>
+  ${pendingHtml}
+  ${doneHtml}`;
 }
 
 /* HISTORY */
@@ -704,6 +787,51 @@ function openNumpad(id){
   document.getElementById('npok').addEventListener('click',confirmNumpad);
 }
 function closeNumpad(){document.getElementById('overlay').innerHTML='';numpadTarget=null;}
+
+function openDeliveryNumpad(deliveryOrder, item, itemIdx){
+  let dlvVal=item.actualPrice!=null?String(item.actualPrice):'0';
+  const ref=()=>{const el=document.getElementById('npdv');if(el)el.textContent=(parseInt(dlvVal)||0).toLocaleString('ko-KR');};
+  document.getElementById('overlay').innerHTML=`<div class="npo" id="npo">
+    <div class="nps">
+      <div class="nph"><span class="npit">${item.name} 실제 입고 단가</span><span class="npcl" id="npcl">✕</span></div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center">발주 수량: ${item.qty}${item.unit}</div>
+      <div class="npd"><span class="npdv" id="npdv">${(parseInt(dlvVal)||0).toLocaleString('ko-KR')}</span><span class="npdu">원 / ${item.unit}</span></div>
+      <div class="npq">
+        <button class="nqb" data-qa="100">+100</button>
+        <button class="nqb" data-qa="500">+500</button>
+        <button class="nqb" data-qa="1000">+1,000</button>
+        <button class="nqb" data-qa="-100">-100</button>
+        <button class="nqb" data-qa="-500">-500</button>
+      </div>
+      <div class="npg">
+        <div class="nk" data-k="1">1</div><div class="nk" data-k="2">2</div><div class="nk" data-k="3">3</div>
+        <div class="nk" data-k="4">4</div><div class="nk" data-k="5">5</div><div class="nk" data-k="6">6</div>
+        <div class="nk" data-k="7">7</div><div class="nk" data-k="8">8</div><div class="nk" data-k="9">9</div>
+        <div class="nk" data-k="00">00</div><div class="nk" data-k="0">0</div><div class="nk del" data-k="del">⌫</div>
+      </div>
+      <button class="npok" id="npok">입력 완료</button>
+    </div>
+  </div>`;
+  document.querySelectorAll('[data-k]').forEach(k=>k.addEventListener('click',()=>{
+    const v=k.dataset.k;
+    if(v==='del'){dlvVal=dlvVal.slice(0,-1)||'0';}
+    else if(dlvVal==='0'){dlvVal=v==='00'?'0':v;}
+    else if((dlvVal+v).length<=8){dlvVal+=v;}
+    ref();
+  }));
+  document.querySelectorAll('[data-qa]').forEach(b=>b.addEventListener('click',()=>{
+    dlvVal=String(Math.max(0,(parseInt(dlvVal)||0)+parseInt(b.dataset.qa)));ref();
+  }));
+  document.getElementById('npcl').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
+  document.getElementById('npo').addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById('overlay').innerHTML='';});
+  document.getElementById('npok').addEventListener('click',()=>{
+    const nv=parseInt(dlvVal)||0;
+    deliveryOrder.items[itemIdx].actualPrice=nv>0?nv:null;
+    saveDelivery();
+    document.getElementById('overlay').innerHTML='';
+    render();
+  });
+}
 function confirmNumpad(){
   const item=ingredients.find(x=>x.id===numpadTarget);if(!item)return;
   const nv=parseInt(numpadVal)||0;
@@ -747,6 +875,45 @@ function bind(){
       await saveToSheets();
     }
   });
+
+  // 입고 확인 탭 이벤트
+  document.querySelectorAll('.dlv-price-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    const di=+btn.dataset.di, ii=+btn.dataset.ii;
+    const pending=deliveryList.filter(d=>!d.confirmed);
+    const d=pending[di]; if(!d)return;
+    const it=d.items[ii]; if(!it)return;
+    openDeliveryNumpad(d, it, ii);
+  }));
+  document.querySelectorAll('.dlv-confirm-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    const di=+btn.dataset.di;
+    const pending=deliveryList.filter(d=>!d.confirmed);
+    const d=pending[di]; if(!d)return;
+    if(!confirm('입고 완료로 처리할까요?'))return;
+    d.confirmed=true;
+    // 가격 히스토리 업데이트
+    d.items.forEach(it=>{
+      const ing=ingredients.find(x=>x.name===it.name&&x.cat===it.cat);
+      if(ing&&it.actualPrice&&it.actualPrice!==ing.price){
+        recordPrice(ing, ing.price, it.actualPrice);
+        ing.price=it.actualPrice;
+      }
+    });
+    saveDelivery();saveIng();savePH();render();
+  }));
+  document.querySelectorAll('.dlv-del-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    const di=+btn.dataset.di;
+    const pending=deliveryList.filter(d=>!d.confirmed);
+    const d=pending[di]; if(!d)return;
+    if(!confirm('이 입고 대기를 삭제할까요?'))return;
+    deliveryList=deliveryList.filter(x=>x!==d);
+    saveDelivery();render();
+  }));
+  const dlvClearAll=document.getElementById('dlvClearAll');
+  if(dlvClearAll)dlvClearAll.addEventListener('click',()=>{
+    if(!confirm('입고 대기 전체를 삭제할까요?'))return;
+    deliveryList=deliveryList.filter(d=>d.confirmed);
+    saveDelivery();render();
+  });
 }
 
 function confOrder(){
@@ -756,9 +923,16 @@ function confOrder(){
   const now=new Date();
   const todayVal=`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   const todayTime=`${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  // 카테고리별로 묶어서 SMS 버튼 목록 생성
+  const catMap={};
+  items.forEach(it=>{if(!catMap[it.cat])catMap[it.cat]=[];catMap[it.cat].push(it);});
+  const cats=Object.keys(catMap);
+
+  // STEP 1: 확정 전 확인 (날짜/공병만)
   document.getElementById('overlay').innerHTML=`<div class="mbg"><div class="mbox">
     <h3>발주 확정</h3>
-    <div style="background:var(--bg3);border-radius:var(--r-md);padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--text2)">
+    <div style="background:var(--bg3);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text2)">
       ${items.length}개 품목 · 총 <span style="color:var(--amber);font-weight:500">${fmt(total)}</span>
     </div>
     <div class="mf">
@@ -766,47 +940,92 @@ function confOrder(){
       <input type="date" id="confDate" value="${todayVal}" max="${todayVal}">
     </div>
     <div class="mf">
-      <label>발주 시간</label>
-      <input type="time" id="confTime" value="${todayTime}">
-    </div>
-    <div class="mf">
-      <label>공병 환급액 (원, 없으면 0)</label>
+      <label>공병 환급액 (없으면 0)</label>
       <input type="number" id="confRefund" value="0" inputmode="numeric" placeholder="0">
     </div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:4px;margin-top:-6px">오늘 날짜가 기본값 — 지난 날짜도 선택 가능해요</div>
     <div class="mbtns">
       <button class="mbcn" id="confCancel">취소</button>
-      <button class="mbok" id="confOk">확정</button>
+      <button class="mbok" id="confOk">확정 →</button>
     </div>
-    <button id="confOkShare" style="width:100%;margin-top:8px;padding:12px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:transparent;font-size:14px;cursor:pointer;color:var(--text2)">확정 후 공유 →</button>
   </div></div>`;
+
   document.getElementById('confCancel').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
-  function doConfirm(andShare){
+
+  document.getElementById('confOk').addEventListener('click',()=>{
     const dateVal=document.getElementById('confDate').value;
-    const timeVal=document.getElementById('confTime').value||'00:00';
     const refund=parseInt(document.getElementById('confRefund')?.value)||0;
     if(!dateVal){alert('날짜를 선택해주세요');return;}
-    const finalDate=new Date(`${dateVal}T${timeVal}:00`);
+    const finalDate=new Date(`${dateVal}T${todayTime}:00`);
     const netTotal=total-refund;
-    history.unshift({id:String(Date.now()),date:finalDate.toISOString(),items,total,refund,netTotal});
+    const orderId=String(Date.now());
+    history.unshift({id:orderId,date:finalDate.toISOString(),items,total,refund,netTotal});
     history.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    const deliveryItems=items.map(it=>({name:it.name,cat:it.cat,unit:it.unit,qty:it.qty,actualPrice:null}));
+    deliveryList.unshift({orderId,orderDate:finalDate.toISOString(),items:deliveryItems,confirmed:false});
+    saveDelivery();
     ingredients.forEach(i=>{if(i._origPrice&&i._origPrice!==i.price){recordPrice(i,i._origPrice,i.price);}i._origPrice=null;i.qty=0;i.priceChanged=false;});
     saveHist();saveIng();savePH();updateTopbar();
-    document.getElementById('overlay').innerHTML='';
     render();
     setSyncStatus('⟳ 저장 중...','#F5A623');
     syncToSheets().then(ok=>setSyncStatus(ok?'☁ 저장 완료':'✕ 저장 실패',ok?'#1D9E75':'#E24B4A'));
     setTimeout(()=>setSyncStatus('☁ 동기화','#888'),4000);
-    if(andShare){
-      const text=buildOrderText(items,total,refund,dateVal,timeVal);
-      shareOrder(text);
-    }
-  }
-  document.getElementById('confOk').addEventListener('click',()=>doConfirm(false));
-  document.getElementById('confOkShare').addEventListener('click',()=>doConfirm(true));
+
+    // STEP 2: 저장 완료 후 바로 발송 화면
+    const fullText=buildOrderTextFull(items,total,refund,dateVal,todayTime);
+    // 클립보드 자동 복사 시도
+    try{navigator.clipboard.writeText(fullText).catch(()=>{});}catch{}
+
+    document.getElementById('overlay').innerHTML=`<div class="mbg" style="align-items:flex-end;padding:0"><div style="background:var(--bg2);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;border-top:0.5px solid var(--border2)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:16px;font-weight:500;color:var(--text)">✅ 발주 확정 완료</div>
+        <button id="shareClose" style="font-size:22px;color:var(--text2);background:none;border:none;cursor:pointer;line-height:1;padding:4px">✕</button>
+      </div>
+      <div style="font-size:12px;color:#1D9E75;margin-bottom:16px">내용이 클립보드에 복사됐어요</div>
+      <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px">카테고리별 문자 발송</div>
+      ${cats.map(cat=>{
+        const phone=catPhones[cat]||'';
+        const catItems=catMap[cat]||[];
+        const smsText=buildSmsText(catItems);
+        const smsHref=phone?`sms:${phone}?body=${encodeURIComponent(smsText)}`:`sms:?body=${encodeURIComponent(smsText)}`;
+        return`<a href="${smsHref}" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:8px;padding:13px 16px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:${phone?'#1C1A17':'var(--bg3)'};text-decoration:none">
+          <span style="font-size:14px;font-weight:500;color:${phone?'#F5EDD8':'var(--text2)'}">📱 ${cat}</span>
+          <span style="font-size:12px;color:${phone?'#F5A623':'#E24B4A'}">${phone||'번호 미등록'}</span>
+        </a>`;
+      }).join('')}
+      <button id="shareCopyAll" style="width:100%;margin-top:4px;padding:13px;border-radius:var(--r-lg);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;cursor:pointer;color:var(--text2)">📋 전체 내용 다시 복사</button>
+    </div></div>`;
+
+    document.getElementById('shareClose').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
+    document.getElementById('shareCopyAll').addEventListener('click',()=>{
+      try{
+        navigator.clipboard.writeText(fullText).then(()=>{
+          const btn=document.getElementById('shareCopyAll');
+          if(btn){btn.textContent='✓ 복사됨!';setTimeout(()=>{btn.textContent='📋 전체 내용 다시 복사';},1500);}
+        });
+      }catch{
+        const ta=document.createElement('textarea');
+        ta.value=fullText;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+        const btn=document.getElementById('shareCopyAll');
+        if(btn){btn.textContent='✓ 복사됨!';setTimeout(()=>{btn.textContent='📋 전체 내용 다시 복사';},1500);}
+      }
+    });
+  });
 }
 
-function buildOrderText(items,total,refund,dateVal,timeVal){
+// 카테고리별 SMS 문자 형식 (업체 발주 스타일)
+function buildSmsText(catItems){
+  const {storeName, greeting, closing} = appSettings;
+  let text=`${greeting} ${storeName} 입니다\n`;
+  catItems.forEach(it=>{
+    const q=it.qty%1===0?it.qty:it.qty.toFixed(2).replace(/\.?0+$/,'');
+    text+=`${it.name} ${q}\n`;
+  });
+  text+=closing;
+  return text;
+}
+
+// 전체 복사용 (카테고리별 묶음)
+function buildOrderTextFull(items,total,refund,dateVal,timeVal){
   const catMap={};
   items.forEach(it=>{if(!catMap[it.cat])catMap[it.cat]=[];catMap[it.cat].push(it);});
   let text=`[발주] ${dateVal} ${timeVal}\n\n`;
@@ -814,10 +1033,9 @@ function buildOrderText(items,total,refund,dateVal,timeVal){
     text+=`▶ ${cat}\n`;
     its.forEach(it=>{
       const q=it.qty%1===0?it.qty:it.qty.toFixed(2).replace(/\.?0+$/,'');
-      text+=`  ${it.name} ${q}${it.unit} × ${Number(it.price).toLocaleString('ko-KR')}원 = ${Number(it.subtotal).toLocaleString('ko-KR')}원\n`;
+      text+=`  ${it.name} ${q}${it.unit}\n`;
     });
-    const catTotal=its.reduce((s,it)=>s+it.subtotal,0);
-    text+=`  소계 ${Number(catTotal).toLocaleString('ko-KR')}원\n\n`;
+    text+='\n';
   });
   text+=`───────────────\n`;
   text+=`총 발주금액 ${Number(total).toLocaleString('ko-KR')}원`;
@@ -885,8 +1103,12 @@ function showAddModal(){
 }
 
 function showCatModal(){
-  document.getElementById('overlay').innerHTML=`<div class="mbg"><div class="mbox">
-    <h3>카테고리 관리</h3>
+  document.getElementById('overlay').innerHTML=`<div class="mbg" style="align-items:flex-start;padding-top:20px"><div class="mbox" style="max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="margin-bottom:0">카테고리 관리</h3>
+      <button id="openSettings" style="font-size:12px;padding:5px 12px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer">⚙ 문자 설정</button>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">카테고리별 발주처 번호를 저장하면 문자 발송이 편해요</div>
     <div id="catListWrap" style="margin-bottom:14px"></div>
     <div style="display:flex;gap:8px;margin-bottom:4px">
       <input id="newCatInput" placeholder="새 카테고리 이름" style="flex:1;padding:10px 12px;border-radius:var(--r-md);border:0.5px solid var(--border2);font-size:15px;color:var(--text);background:var(--bg2)">
@@ -896,12 +1118,24 @@ function showCatModal(){
     <div class="mbtns"><button class="mbok" id="catDone" style="width:100%">완료</button></div>
   </div></div>`;
 
+  document.getElementById('openSettings').addEventListener('click',()=>{
+    document.getElementById('overlay').innerHTML='';
+    showSettingsModal();
+  });
+
   function renderCatList(){
     const wrap=document.getElementById('catListWrap');
     wrap.innerHTML=customCats.map((c,i)=>`
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:var(--r-md);margin-bottom:6px">
-        <span style="font-size:15px;font-weight:500;color:var(--text)">${c}</span>
-        <button data-delcat="${i}" style="font-size:12px;padding:3px 10px;border-radius:6px;border:0.5px solid #f09595;background:transparent;color:#a32d2d;cursor:pointer">삭제</button>
+      <div style="background:var(--bg3);border-radius:var(--r-md);margin-bottom:8px;padding:10px 12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:15px;font-weight:500;color:var(--text)">${c}</span>
+          <button data-delcat="${i}" style="font-size:12px;padding:3px 10px;border-radius:6px;border:0.5px solid #f09595;background:transparent;color:#a32d2d;cursor:pointer">삭제</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:11px;color:var(--text2);white-space:nowrap">📱 번호</span>
+          <input data-phone-cat="${c}" value="${catPhones[c]||''}" placeholder="010-0000-0000" style="flex:1;padding:7px 10px;border-radius:var(--r-md);border:0.5px solid var(--border2);font-size:13px;color:var(--text);background:var(--bg2)">
+          <button data-save-phone="${c}" style="padding:7px 12px;border-radius:var(--r-md);border:none;background:#1C1A17;color:#F5EDD8;font-size:12px;cursor:pointer">저장</button>
+        </div>
       </div>`).join('');
     wrap.querySelectorAll('[data-delcat]').forEach(btn=>btn.addEventListener('click',()=>{
       const idx=+btn.dataset.delcat;
@@ -910,6 +1144,15 @@ function showCatModal(){
       if(inUse&&!confirm(`"${catName}" 카테고리를 쓰는 품목이 있어요. 그래도 삭제할까요?`))return;
       customCats.splice(idx,1);
       saveCats();renderCatList();
+    }));
+    wrap.querySelectorAll('[data-save-phone]').forEach(btn=>btn.addEventListener('click',()=>{
+      const cat=btn.dataset.savePhone;
+      const inp=wrap.querySelector(`[data-phone-cat="${cat}"]`);
+      const phone=inp?inp.value.trim():'';
+      catPhones[cat]=phone;
+      savePhones();
+      btn.textContent='✓';
+      setTimeout(()=>btn.textContent='저장',1500);
     }));
   }
 
@@ -928,6 +1171,52 @@ function showCatModal(){
     document.getElementById('overlay').innerHTML='';
     if(!getCats().includes(curCat))curCat='전체';
     render();
+  });
+}
+
+function showSettingsModal(){
+  document.getElementById('overlay').innerHTML=`<div class="mbg"><div class="mbox">
+    <h3>문자 발송 설정</h3>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">발주처에 보내는 문자 형식을 설정해요</div>
+    <div class="mf">
+      <label>상호명</label>
+      <input id="setStoreName" value="${appSettings.storeName}" placeholder="예: 범방동영진돼지국밥">
+    </div>
+    <div class="mf">
+      <label>인사말</label>
+      <input id="setGreeting" value="${appSettings.greeting}" placeholder="예: 안녕하세요">
+    </div>
+    <div class="mf">
+      <label>마무리 문구</label>
+      <textarea id="setClosing" style="width:100%;padding:10px 12px;border-radius:var(--r-md);border:0.5px solid var(--border2);font-size:14px;color:var(--text);background:var(--bg2);resize:none;height:80px;font-family:inherit">${appSettings.closing}</textarea>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px;background:var(--bg3);padding:10px 12px;border-radius:var(--r-md)">
+      미리보기:<br>
+      <span id="previewText" style="white-space:pre-wrap;font-size:12px;color:var(--text)"></span>
+    </div>
+    <div class="mbtns">
+      <button class="mbcn" id="settingsCancel">취소</button>
+      <button class="mbok" id="settingsSave">저장</button>
+    </div>
+  </div></div>`;
+  function updatePreview(){
+    const sn=document.getElementById('setStoreName').value||'상호명';
+    const gr=document.getElementById('setGreeting').value||'안녕하세요';
+    const cl=document.getElementById('setClosing').value;
+    document.getElementById('previewText').textContent=`${gr} ${sn} 입니다\n품목1 40\n품목2 20\n${cl}`;
+  }
+  updatePreview();
+  document.getElementById('setStoreName').addEventListener('input',updatePreview);
+  document.getElementById('setGreeting').addEventListener('input',updatePreview);
+  document.getElementById('setClosing').addEventListener('input',updatePreview);
+  document.getElementById('settingsCancel').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';showCatModal();});
+  document.getElementById('settingsSave').addEventListener('click',()=>{
+    appSettings.storeName=document.getElementById('setStoreName').value.trim()||'범방동영진돼지국밥';
+    appSettings.greeting=document.getElementById('setGreeting').value.trim()||'안녕하세요';
+    appSettings.closing=document.getElementById('setClosing').value;
+    saveSettings();
+    document.getElementById('overlay').innerHTML='';
+    alert('저장 완료!');
   });
 }
 
