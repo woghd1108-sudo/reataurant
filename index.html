@@ -84,15 +84,14 @@ body { font-family: -apple-system, 'Noto Sans KR', sans-serif; background: var(-
 .cat-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .cat-chip { padding: 6px 14px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--bg2); font-size: 13px; color: var(--text2); cursor: pointer; min-height: 36px; display: flex; align-items: center; }
 .cat-chip.active { background: #1C1A17; color: #F5EDD8; border-color: #1C1A17; }
-.ing-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px; }
-.ing-row { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--r-lg); padding: 10px 10px; }
-.ing-row.has-qty { border-color: rgba(212,130,10,0.5); }
+.ing-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.ing-row { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--r-lg); padding: 12px 10px; }
+.ing-row.has-qty { border-color: rgba(212,130,10,0.6); background: #fffbf3; }
 .ing-name-line { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .ing-name { font-size: 15px; font-weight: 500; color: var(--text); }
 .ing-cat-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg3); color: var(--text2); margin-left: 6px; }
 .del-row-btn { font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 0.5px solid #f09595; background: transparent; color: #a32d2d; cursor: pointer; }
 .ing-bottom { display: flex; align-items: center; gap: 8px; }
-.price-row-ctrl { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .qty-row-ctrl { display: flex; align-items: center; gap: 8px; }
 .pbtn { width: 36px; height: 36px; border-radius: var(--r-md); border: 0.5px solid var(--border2); background: var(--bg3); font-size: 11px; font-weight: 500; cursor: pointer; color: var(--amber); flex-shrink: 0; -webkit-tap-highlight-color: transparent; }
 .pbtn:active { background: #e8e6e0; }
@@ -484,7 +483,6 @@ function render(){
 /* ORDER */
 function buildOrder(){
   const fl=curCat==='전체'?ingredients:ingredients.filter(i=>i.cat===curCat);
-  const total=ingredients.reduce((s,i)=>s+i.price*i.qty,0);
   const wq=ingredients.filter(i=>i.qty>0).length;
   const chips=[...getCats().map(c=>`<div class="cat-chip${curCat===c?' active':''}" data-catsel="${c}">${c}</div>`), `<div class="cat-chip" id="addCatChip" style="border-style:dashed;color:var(--amber)">+ 카테고리</div>`].join('');
   const rows=fl.map(item=>`<div class="ing-row${item.qty>0?' has-qty':''}">
@@ -492,32 +490,21 @@ function buildOrder(){
       <div><span class="ing-name">${item.name}</span><span class="ing-cat-badge">${item.cat}</span></div>
       <button class="del-row-btn" data-di="${item.id}">삭제</button>
     </div>
-    <div class="price-row-ctrl">
-      <button class="pbtn" data-pm="${item.id}">−500</button>
-      <div class="price-touch-btn" data-np="${item.id}" style="flex:1;min-width:0">
-        <span class="price-touch-icon">✎</span>
-        <div><div class="ptl">단가 (터치 또는 ±500)</div>
-        <div class="ptv">${item.price.toLocaleString()}원/${item.unit}${item.priceChanged?'<span class="pcd"></span>':''}</div></div>
-      </div>
-      <button class="pbtn" data-pp="${item.id}">+500</button>
-    </div>
-    <div class="qty-row-ctrl">
-      <button class="qbtn" data-qm="${item.id}">−</button>
-      <span class="qnum">${item.qty}</span>
-      <button class="qbtn" data-qp="${item.id}">+</button>
-      <span class="subtotal">${item.qty>0?fmt(item.price*item.qty):''}</span>
+    <div class="qty-row-ctrl" style="justify-content:space-between">
+      <button class="qbtn" data-qm="${item.id}" style="width:42px;height:42px;font-size:22px">−</button>
+      <span class="qnum" data-qedit="${item.id}" style="font-size:22px;min-width:40px;cursor:pointer;border-bottom:1.5px dashed var(--border2)">${item.qty}</span>
+      <button class="qbtn" data-qp="${item.id}" style="width:42px;height:42px;font-size:22px">+</button>
     </div>
   </div>`).join('')||'<div style="text-align:center;padding:30px 0;color:#999">품목이 없습니다</div>';
-  return`<div class="summary-strip">
+  return`<div class="summary-strip" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
     <div class="scard"><div class="sl">발주 품목수</div><div class="sv">${wq}건</div></div>
-    <div class="scard"><div class="sl">이번 발주 금액</div><div class="sv acc">${fmtS(total)}</div></div>
-    <div class="scard"><div class="sl">총 누적 지출</div><div class="sv">${fmtS(history.reduce((s,h)=>s+h.total,0))}</div></div>
+    <div class="scard"><div class="sl">입고대기</div><div class="sv acc">${deliveryList.filter(d=>!d.confirmed).length}건</div></div>
   </div>
   <div class="cat-row">${chips}</div>
   <div class="ing-list">${rows}</div>
   <button class="add-ing-btn" id="addIngBtn">+ 식자재 추가</button>
   <div class="confirm-bar">
-    <div><div class="ctl">발주 확정 금액</div><div class="ctv">${fmt(total)}</div></div>
+    <div><div class="ctl">발주 품목</div><div class="ctv">${wq}건</div></div>
     <button class="confirm-btn" id="confBtn" ${wq===0?'disabled':''}>발주 확정 →</button>
   </div>`;
 }
@@ -533,17 +520,27 @@ function buildDelivery(){
     pendingHtml=pending.map((d,di)=>{
       const dt=new Date(d.orderDate);
       const dtStr=`${dt.getMonth()+1}/${dt.getDate()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-      const rows=d.items.map((it,ii)=>`
-        <div style="display:grid;grid-template-columns:1fr 0.5fr 0.7fr;gap:6px;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border)">
-          <div>
-            <div style="font-size:14px;font-weight:500;color:var(--text)">${it.name}</div>
-            <div style="font-size:11px;color:var(--text2)">${it.cat} · ${it.qty}${it.unit}</div>
+      const rows=d.items.map((it,ii)=>{
+        const ing=ingredients.find(x=>x.name===it.name&&x.cat===it.cat);
+        const lastPrice=ing?ing.price:0;
+        const curPrice=it.actualPrice!=null?it.actualPrice:(lastPrice||0);
+        return`<div style="padding:10px 0;border-bottom:0.5px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div>
+              <span style="font-size:14px;font-weight:500;color:var(--text)">${it.name}</span>
+              <span style="font-size:11px;color:var(--text2);margin-left:6px">${it.qty}${it.unit}</span>
+            </div>
+            <span style="font-size:13px;font-weight:500;color:${it.actualPrice!=null?'var(--amber)':'var(--text3)'}">${it.actualPrice!=null?Number(it.actualPrice).toLocaleString()+'원':'미입력'}</span>
           </div>
-          <div style="font-size:12px;color:var(--text2);text-align:center">${it.actualPrice!=null?Number(it.actualPrice).toLocaleString()+'원':'미입력'}</div>
-          <button class="dlv-price-btn" data-di="${di}" data-ii="${ii}" style="padding:8px;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:12px;color:var(--amber);cursor:pointer;font-weight:500">
-            ${it.actualPrice!=null?'수정':'단가 입력'}
-          </button>
-        </div>`).join('');
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="dlv-minus-btn" data-di="${di}" data-ii="${ii}" data-price="${curPrice}" style="flex:1;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;font-weight:500;color:var(--text);cursor:pointer">−500</button>
+            <button class="dlv-price-btn" data-di="${di}" data-ii="${ii}" style="flex:2;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;color:var(--text2);cursor:pointer">
+              ${lastPrice>0&&it.actualPrice==null?`기준 ${lastPrice.toLocaleString()}원`:'직접입력'}
+            </button>
+            <button class="dlv-plus-btn" data-di="${di}" data-ii="${ii}" data-price="${curPrice}" style="flex:1;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;font-weight:500;color:var(--amber);cursor:pointer">+500</button>
+          </div>
+        </div>`;
+      }).join('');
       const allEntered=d.items.every(it=>it.actualPrice!=null);
       return`<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -788,20 +785,59 @@ function openNumpad(id){
 }
 function closeNumpad(){document.getElementById('overlay').innerHTML='';numpadTarget=null;}
 
+// 수량 직접입력 패드
+function openQtyNumpad(itemId){
+  const item=ingredients.find(x=>x.id===itemId);if(!item)return;
+  let qtyVal=item.qty>0?String(item.qty):'0';
+  const ref=()=>{const el=document.getElementById('npdv');if(el)el.textContent=parseInt(qtyVal)||0;};
+  document.getElementById('overlay').innerHTML=`<div class="npo" id="npo">
+    <div class="nps">
+      <div class="nph"><span class="npit">${item.name} 수량 입력</span><span class="npcl" id="npcl">✕</span></div>
+      <div class="npd"><span class="npdv" id="npdv">${item.qty}</span><span class="npdu">${item.unit}</span></div>
+      <div class="npg">
+        <div class="nk" data-k="1">1</div><div class="nk" data-k="2">2</div><div class="nk" data-k="3">3</div>
+        <div class="nk" data-k="4">4</div><div class="nk" data-k="5">5</div><div class="nk" data-k="6">6</div>
+        <div class="nk" data-k="7">7</div><div class="nk" data-k="8">8</div><div class="nk" data-k="9">9</div>
+        <div class="nk" data-k="00">00</div><div class="nk" data-k="0">0</div><div class="nk del" data-k="del">⌫</div>
+      </div>
+      <button class="npok" id="npok">확인</button>
+    </div>
+  </div>`;
+  document.querySelectorAll('[data-k]').forEach(k=>k.addEventListener('click',()=>{
+    const v=k.dataset.k;
+    if(v==='del'){qtyVal=qtyVal.slice(0,-1)||'0';}
+    else if(qtyVal==='0'){qtyVal=v==='00'?'0':v;}
+    else if((qtyVal+v).length<=4){qtyVal+=v;}
+    ref();
+  }));
+  document.getElementById('npcl').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
+  document.getElementById('npo').addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById('overlay').innerHTML='';});
+  document.getElementById('npok').addEventListener('click',()=>{
+    item.qty=parseInt(qtyVal)||0;
+    saveIng();
+    document.getElementById('overlay').innerHTML='';
+    render();
+  });
+}
+
+// 입고 단가 패드 — 직전 발주가격을 기본값으로
 function openDeliveryNumpad(deliveryOrder, item, itemIdx){
-  let dlvVal=item.actualPrice!=null?String(item.actualPrice):'0';
+  // 직전 발주가격 찾기 (ingredients에서 같은 이름 품목의 price)
+  const ing=ingredients.find(x=>x.name===item.name&&x.cat===item.cat);
+  const lastPrice=ing?ing.price:0;
+  let dlvVal=item.actualPrice!=null?String(item.actualPrice):(lastPrice>0?String(lastPrice):'0');
   const ref=()=>{const el=document.getElementById('npdv');if(el)el.textContent=(parseInt(dlvVal)||0).toLocaleString('ko-KR');};
   document.getElementById('overlay').innerHTML=`<div class="npo" id="npo">
     <div class="nps">
-      <div class="nph"><span class="npit">${item.name} 실제 입고 단가</span><span class="npcl" id="npcl">✕</span></div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center">발주 수량: ${item.qty}${item.unit}</div>
+      <div class="nph"><span class="npit">${item.name} 입고 단가</span><span class="npcl" id="npcl">✕</span></div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center">발주 수량: ${item.qty}${item.unit}${lastPrice>0?` · 직전가격 ${lastPrice.toLocaleString()}원`:''}</div>
       <div class="npd"><span class="npdv" id="npdv">${(parseInt(dlvVal)||0).toLocaleString('ko-KR')}</span><span class="npdu">원 / ${item.unit}</span></div>
       <div class="npq">
-        <button class="nqb" data-qa="100">+100</button>
         <button class="nqb" data-qa="500">+500</button>
         <button class="nqb" data-qa="1000">+1,000</button>
-        <button class="nqb" data-qa="-100">-100</button>
+        <button class="nqb" data-qa="2000">+2,000</button>
         <button class="nqb" data-qa="-500">-500</button>
+        <button class="nqb" data-qa="-1000">-1,000</button>
       </div>
       <div class="npg">
         <div class="nk" data-k="1">1</div><div class="nk" data-k="2">2</div><div class="nk" data-k="3">3</div>
@@ -827,7 +863,9 @@ function openDeliveryNumpad(deliveryOrder, item, itemIdx){
   document.getElementById('npok').addEventListener('click',()=>{
     const nv=parseInt(dlvVal)||0;
     deliveryOrder.items[itemIdx].actualPrice=nv>0?nv:null;
-    saveDelivery();
+    // ingredients 가격도 업데이트
+    if(ing&&nv>0)ing.price=nv;
+    saveDelivery();saveIng();
     document.getElementById('overlay').innerHTML='';
     render();
   });
@@ -845,9 +883,7 @@ function bind(){
   document.querySelectorAll('[data-catsel]').forEach(el=>el.addEventListener('click',()=>{curCat=el.dataset.catsel;render();}));
   document.querySelectorAll('[data-qp]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.qp);if(i){i.qty++;saveIng();render();}}));
   document.querySelectorAll('[data-qm]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.qm);if(i&&i.qty>0){i.qty--;saveIng();render();}}));
-  document.querySelectorAll('[data-np]').forEach(el=>el.addEventListener('click',()=>openNumpad(+el.dataset.np)));
-  document.querySelectorAll('[data-pp]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.pp);if(i){if(!i._origPrice)i._origPrice=i.price;i.price+=500;i.priceChanged=true;saveIng();render();}}));
-  document.querySelectorAll('[data-pm]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.pm);if(i&&i.price>500){if(!i._origPrice)i._origPrice=i.price;i.price-=500;i.priceChanged=true;saveIng();render();}}));
+  document.querySelectorAll('[data-qedit]').forEach(el=>el.addEventListener('click',()=>openQtyNumpad(+el.dataset.qedit)));
   document.querySelectorAll('[data-di]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.di);if(i&&confirm(`"${i.name}" 삭제할까요?`)){ingredients=ingredients.filter(x=>x.id!==+el.dataset.di);lsSet(SK_ING,JSON.stringify(ingredients));saveToSheets();render();}}));
   const ab=document.getElementById('addIngBtn');if(ab)ab.addEventListener('click',showAddModal);
   const cb=document.getElementById('confBtn');if(cb)cb.addEventListener('click',confOrder);
@@ -883,6 +919,28 @@ function bind(){
     const d=pending[di]; if(!d)return;
     const it=d.items[ii]; if(!it)return;
     openDeliveryNumpad(d, it, ii);
+  }));
+  document.querySelectorAll('.dlv-plus-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    const di=+btn.dataset.di, ii=+btn.dataset.ii;
+    const pending=deliveryList.filter(d=>!d.confirmed);
+    const d=pending[di]; if(!d)return;
+    const it=d.items[ii]; if(!it)return;
+    const ing=ingredients.find(x=>x.name===it.name&&x.cat===it.cat);
+    const base=it.actualPrice!=null?it.actualPrice:(ing?ing.price:0);
+    it.actualPrice=base+500;
+    if(ing)ing.price=it.actualPrice;
+    saveDelivery();saveIng();render();
+  }));
+  document.querySelectorAll('.dlv-minus-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    const di=+btn.dataset.di, ii=+btn.dataset.ii;
+    const pending=deliveryList.filter(d=>!d.confirmed);
+    const d=pending[di]; if(!d)return;
+    const it=d.items[ii]; if(!it)return;
+    const ing=ingredients.find(x=>x.name===it.name&&x.cat===it.cat);
+    const base=it.actualPrice!=null?it.actualPrice:(ing?ing.price:0);
+    it.actualPrice=Math.max(0,base-500);
+    if(ing)ing.price=it.actualPrice;
+    saveDelivery();saveIng();render();
   }));
   document.querySelectorAll('.dlv-confirm-btn').forEach(btn=>btn.addEventListener('click',()=>{
     const di=+btn.dataset.di;
@@ -1090,14 +1148,12 @@ function showAddModal(){
     <div class="mf"><label>품목명</label><input id="mn" placeholder="품목명 입력"></div>
     <div class="mf"><label>카테고리</label><select id="mc2">${getCatsOnly().map(c=>`<option>${c}</option>`).join('')}</select></div>
     <div class="mf"><label>단위</label><input id="mu" value="개"></div>
-    <div class="mf"><label>단가 (원)</label><input id="mp" type="number" inputmode="numeric" placeholder="0"></div>
-    <div class="mf"><label>발주량</label><input id="mq" type="number" inputmode="numeric" value="0"></div>
     <div class="mbtns"><button class="mbcn" id="mCan">취소</button><button class="mbok" id="mOk">추가</button></div>
   </div></div>`;
   document.getElementById('mCan').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
   document.getElementById('mOk').addEventListener('click',()=>{
     const name=document.getElementById('mn').value.trim();if(!name){alert('품목명을 입력해주세요');return;}
-    ingredients.push({id:Date.now(),name,cat:document.getElementById('mc2').value,unit:document.getElementById('mu').value||'개',price:parseInt(document.getElementById('mp').value)||0,qty:parseInt(document.getElementById('mq').value)||0});
+    ingredients.push({id:Date.now(),name,cat:document.getElementById('mc2').value,unit:document.getElementById('mu').value||'개',price:0,qty:0});
     saveIng();document.getElementById('overlay').innerHTML='';render();
   });
 }
