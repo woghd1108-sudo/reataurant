@@ -1417,41 +1417,60 @@ function showMonthSummaryModal(){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
     months.push({val:`${d.getFullYear()}-${pad(d.getMonth()+1)}`,label:`${d.getFullYear()}년 ${d.getMonth()+1}월`});
   }
-  document.getElementById('overlay').innerHTML=`<div class="mbg"><div class="mbox">
+  const cats=getCatsOnly();
+
+  document.getElementById('overlay').innerHTML=`<div class="mbg" style="align-items:flex-start;padding-top:20px"><div class="mbox" style="max-height:92vh;overflow-y:auto">
     <h3>월합계 입력</h3>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">월별 총 지출액만 간편하게 입력해요</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">카테고리별 금액을 입력해요. 0이면 제외돼요.</div>
     <div class="mf">
       <label>월 선택</label>
       <select id="monthSel">${months.map(m=>`<option value="${m.val}">${m.label}</option>`).join('')}</select>
     </div>
-    <div class="mf">
-      <label>총 지출액 (원)</label>
-      <input id="monthAmt" type="number" inputmode="numeric" placeholder="0" style="font-size:18px">
+    <div style="margin-bottom:14px">
+      ${cats.map(cat=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:14px;font-weight:500;color:var(--text);width:80px;flex-shrink:0">${cat}</span>
+          <input data-cat-amt="${cat}" type="number" inputmode="numeric" placeholder="0" style="flex:1;padding:9px 12px;border-radius:var(--r-md);border:0.5px solid var(--border2);font-size:15px;color:var(--text);background:var(--bg2)">
+          <span style="font-size:13px;color:var(--text2);flex-shrink:0">원</span>
+        </div>`).join('')}
     </div>
-    <div class="mf">
-      <label>메모 (선택)</label>
-      <input id="monthMemo" placeholder="예: 1월 합계">
-    </div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:4px">⚠ 이미 해당 월에 입력된 내역이 있으면 합산돼요</div>
+    <div id="monthTotal" style="padding:10px 14px;background:var(--amber-bg);border-radius:var(--r-md);font-size:14px;font-weight:500;color:var(--amber);margin-bottom:14px">합계: 0원</div>
     <div class="mbtns">
       <button class="mbcn" id="monthCancel">취소</button>
       <button class="mbok" id="monthOk">저장</button>
     </div>
   </div></div>`;
+
+  // 합계 실시간 업데이트
+  document.querySelectorAll('[data-cat-amt]').forEach(inp=>inp.addEventListener('input',()=>{
+    const total=cats.reduce((s,cat)=>{
+      const el=document.querySelector(`[data-cat-amt="${cat}"]`);
+      return s+(parseInt(el?.value)||0);
+    },0);
+    document.getElementById('monthTotal').textContent=`합계: ${total.toLocaleString()}원`;
+  }));
+
   document.getElementById('monthCancel').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
   document.getElementById('monthOk').addEventListener('click',()=>{
     const monthVal=document.getElementById('monthSel').value;
-    const amt=parseInt(document.getElementById('monthAmt').value)||0;
-    const memo=document.getElementById('monthMemo').value.trim()||`${monthVal.replace('-','년 ')}월 합계`;
-    if(!amt){alert('금액을 입력해주세요');return;}
-    // 해당 월 1일 날짜로 저장
     const [y,m]=monthVal.split('-');
     const date=new Date(`${y}-${m}-01T09:00:00`);
+    const items=[];
+    let total=0;
+    cats.forEach(cat=>{
+      const el=document.querySelector(`[data-cat-amt="${cat}"]`);
+      const amt=parseInt(el?.value)||0;
+      if(amt>0){
+        items.push({name:`${cat} 합계`,cat,unit:'월',price:amt,qty:1,subtotal:amt});
+        total+=amt;
+      }
+    });
+    if(!items.length){alert('금액을 입력해주세요');return;}
     history.push({
       id:String(Date.now()),
       date:date.toISOString(),
-      items:[{name:memo,cat:'합계입력',unit:'건',price:amt,qty:1,subtotal:amt}],
-      total:amt,
+      items,
+      total,
       isMonthlySummary:true
     });
     history.sort((a,b)=>new Date(b.date)-new Date(a.date));
