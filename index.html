@@ -348,7 +348,9 @@ async function loadFromSheets(){
     if(p.ingredients&&p.ingredients.length)ingredients=p.ingredients;
     if(p.history)history=p.history;
     if(p.priceHist)priceHist=p.priceHist;
-    saveCats();saveIng();saveHist();savePH();
+    if(p.catPhones)catPhones=p.catPhones;
+    if(p.appSettings)appSettings={...appSettings,...p.appSettings};
+    saveCats();saveIng();saveHist();savePH();savePhones();saveSettings();
     return true;
   }catch(e){return false;}
 }
@@ -420,8 +422,8 @@ function load(){
 const saveIng=()=>{lsSet(SK_ING,JSON.stringify(ingredients));scheduleSave();};
 const saveHist=()=>{lsSet(SK_HIST,JSON.stringify(history));scheduleSave();};
 const savePH=()=>{lsSet(SK_PH,JSON.stringify(priceHist));scheduleSave();};
-const savePhones=()=>{lsSet(SK_PHONES,JSON.stringify(catPhones));};
-const saveSettings=()=>{lsSet(SK_SETTINGS,JSON.stringify(appSettings));};
+const savePhones=()=>{lsSet(SK_PHONES,JSON.stringify(catPhones));scheduleSave();};
+const saveSettings=()=>{lsSet(SK_SETTINGS,JSON.stringify(appSettings));scheduleSave();};
 const saveDelivery=()=>{lsSet(SK_DELIVERY,JSON.stringify(deliveryList));};
 
 let saveTimer=null;
@@ -437,7 +439,9 @@ async function saveToSheets(){
       cats:customCats,
       ingredients:ingredients,
       history:history,
-      priceHist:priceHist
+      priceHist:priceHist,
+      catPhones:catPhones,
+      appSettings:appSettings
     })});
     showSyncStatus('✓ 저장 완료','#1D9E75');
     setTimeout(()=>showSyncStatus('☁ 동기화','#888'),2000);
@@ -524,20 +528,24 @@ function buildDelivery(){
         const ing=ingredients.find(x=>x.name===it.name&&x.cat===it.cat);
         const lastPrice=ing?ing.price:0;
         const curPrice=it.actualPrice!=null?it.actualPrice:(lastPrice||0);
+        const actualQty=it.actualQty!=null?it.actualQty:it.qty;
+        const qtyChanged=it.actualQty!=null&&it.actualQty!==it.qty;
         return`<div style="padding:10px 0;border-bottom:0.5px solid var(--border)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div>
               <span style="font-size:14px;font-weight:500;color:var(--text)">${it.name}</span>
-              <span style="font-size:11px;color:var(--text2);margin-left:6px">${it.qty}${it.unit}</span>
+              <span class="dlv-qty-edit" data-di="${di}" data-ii="${ii}" style="font-size:12px;color:${qtyChanged?'var(--amber)':'var(--text2)'};margin-left:6px;cursor:pointer;border-bottom:1px dashed var(--border2)">
+                ${qtyChanged?`${actualQty}${it.unit} (발주 ${it.qty})`:`${it.qty}${it.unit}`} ✎
+              </span>
             </div>
             <span style="font-size:13px;font-weight:500;color:${it.actualPrice!=null?'var(--amber)':'var(--text3)'}">${it.actualPrice!=null?Number(it.actualPrice).toLocaleString()+'원':'미입력'}</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <button class="dlv-minus-btn" data-di="${di}" data-ii="${ii}" data-price="${curPrice}" style="flex:1;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;font-weight:500;color:var(--text);cursor:pointer">−500</button>
+            <button class="dlv-minus-btn" data-di="${di}" data-ii="${ii}" style="flex:1;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;font-weight:500;color:var(--text);cursor:pointer">−500</button>
             <button class="dlv-price-btn" data-di="${di}" data-ii="${ii}" style="flex:2;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;color:var(--text2);cursor:pointer">
               ${lastPrice>0&&it.actualPrice==null?`기준 ${lastPrice.toLocaleString()}원`:'직접입력'}
             </button>
-            <button class="dlv-plus-btn" data-di="${di}" data-ii="${ii}" data-price="${curPrice}" style="flex:1;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;font-weight:500;color:var(--amber);cursor:pointer">+500</button>
+            <button class="dlv-plus-btn" data-di="${di}" data-ii="${ii}" style="flex:1;padding:10px 0;border-radius:var(--r-md);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;font-weight:500;color:var(--amber);cursor:pointer">+500</button>
           </div>
         </div>`;
       }).join('');
@@ -555,7 +563,7 @@ function buildDelivery(){
         </div>
         ${rows}
         ${allEntered?`<div style="margin-top:10px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--r-md);font-size:13px;color:var(--amber);font-weight:500">
-          실 입고금액: ${Number(d.items.reduce((s,it)=>s+(it.actualPrice||0)*it.qty,0)).toLocaleString()}원
+          실 입고금액: ${Number(d.items.reduce((s,it)=>s+(it.actualPrice||0)*(it.actualQty!=null?it.actualQty:it.qty),0)).toLocaleString()}원
         </div>`:'<div style="margin-top:8px;font-size:12px;color:var(--text2)">단가 입력 후 입고 완료 버튼이 나타나요</div>'}
       </div>`;
     }).join('');
@@ -607,7 +615,10 @@ function buildHist(){
     <div class="scard"><div class="sl">총 지출</div><div class="sv acc">${fmtS(pt)}</div></div>
     <div class="scard"><div class="sl">총 발주 수량</div><div class="sv">${pq}개</div></div>
   </div>
-  <button id="addPastBtn" style="width:100%;padding:13px;border-radius:var(--r-lg);border:0.5px dashed var(--border2);background:transparent;font-size:14px;color:var(--text2);cursor:pointer;margin-bottom:14px">+ 지난 발주 직접 입력</button>
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button id="addPastBtn" style="flex:1;padding:13px;border-radius:var(--r-lg);border:0.5px dashed var(--border2);background:transparent;font-size:14px;color:var(--text2);cursor:pointer">+ 지난 발주 입력</button>
+    <button id="addMonthBtn" style="flex:1;padding:13px;border-radius:var(--r-lg);border:0.5px dashed var(--border2);background:transparent;font-size:14px;color:var(--amber);cursor:pointer">+ 월합계 입력</button>
+  </div>
   ${body}`;
 }
 
@@ -798,7 +809,7 @@ function openQtyNumpad(itemId){
         <div class="nk" data-k="1">1</div><div class="nk" data-k="2">2</div><div class="nk" data-k="3">3</div>
         <div class="nk" data-k="4">4</div><div class="nk" data-k="5">5</div><div class="nk" data-k="6">6</div>
         <div class="nk" data-k="7">7</div><div class="nk" data-k="8">8</div><div class="nk" data-k="9">9</div>
-        <div class="nk" data-k="00">00</div><div class="nk" data-k="0">0</div><div class="nk del" data-k="del">⌫</div>
+        <div class="nk" data-k=".">.</div><div class="nk" data-k="0">0</div><div class="nk del" data-k="del">⌫</div>
       </div>
       <button class="npok" id="npok">확인</button>
     </div>
@@ -806,8 +817,10 @@ function openQtyNumpad(itemId){
   document.querySelectorAll('[data-k]').forEach(k=>k.addEventListener('click',()=>{
     const v=k.dataset.k;
     if(v==='del'){qtyVal=qtyVal.slice(0,-1)||'0';}
-    else if(qtyVal==='0'){qtyVal=v==='00'?'0':v;}
-    else if((qtyVal+v).length<=4){qtyVal+=v;}
+    else if(v==='.'){if(!qtyVal.includes('.'))qtyVal+='.';}
+    else if(qtyVal==='0'){qtyVal=v;}
+    else if(qtyVal.includes('.')&&qtyVal.split('.')[1].length>=2){}
+    else if(qtyVal.length<6){qtyVal+=v;}
     ref();
   }));
   document.getElementById('npcl').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
@@ -820,7 +833,44 @@ function openQtyNumpad(itemId){
   });
 }
 
-// 입고 단가 패드 — 직전 발주가격을 기본값으로
+// 입고 실수량 입력 패드 (소수점 지원)
+function openDeliveryQtyNumpad(deliveryOrder, item, itemIdx){
+  const actualQty=item.actualQty!=null?item.actualQty:item.qty;
+  let qtyVal=String(actualQty);
+  const ref=()=>{const el=document.getElementById('npdv');if(el)el.textContent=qtyVal;};
+  document.getElementById('overlay').innerHTML=`<div class="npo" id="npo">
+    <div class="nps">
+      <div class="nph"><span class="npit">${item.name} 실수량 입력</span><span class="npcl" id="npcl">✕</span></div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center">발주 수량: ${item.qty}${item.unit} · 소수점 입력 가능</div>
+      <div class="npd"><span class="npdv" id="npdv">${qtyVal}</span><span class="npdu">${item.unit}</span></div>
+      <div class="npg" style="margin-bottom:8px">
+        <div class="nk" data-k="1">1</div><div class="nk" data-k="2">2</div><div class="nk" data-k="3">3</div>
+        <div class="nk" data-k="4">4</div><div class="nk" data-k="5">5</div><div class="nk" data-k="6">6</div>
+        <div class="nk" data-k="7">7</div><div class="nk" data-k="8">8</div><div class="nk" data-k="9">9</div>
+        <div class="nk" data-k=".">.</div><div class="nk" data-k="0">0</div><div class="nk del" data-k="del">⌫</div>
+      </div>
+      <button class="npok" id="npok">확인</button>
+    </div>
+  </div>`;
+  document.querySelectorAll('[data-k]').forEach(k=>k.addEventListener('click',()=>{
+    const v=k.dataset.k;
+    if(v==='del'){qtyVal=qtyVal.slice(0,-1)||'0';}
+    else if(v==='.'){if(!qtyVal.includes('.'))qtyVal+='.'; }
+    else if(qtyVal==='0'){qtyVal=v;}
+    else if(qtyVal.includes('.')&&qtyVal.split('.')[1].length>=2){}  // 소수점 2자리 제한
+    else if(qtyVal.length<7){qtyVal+=v;}
+    ref();
+  }));
+  document.getElementById('npcl').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
+  document.getElementById('npo').addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById('overlay').innerHTML='';});
+  document.getElementById('npok').addEventListener('click',()=>{
+    const nv=parseFloat(qtyVal)||0;
+    item.actualQty=nv>0?nv:item.qty;
+    saveDelivery();
+    document.getElementById('overlay').innerHTML='';
+    render();
+  });
+}
 function openDeliveryNumpad(deliveryOrder, item, itemIdx){
   // 직전 발주가격 찾기 (ingredients에서 같은 이름 품목의 price)
   const ing=ingredients.find(x=>x.name===item.name&&x.cat===item.cat);
@@ -889,6 +939,7 @@ function bind(){
   const cb=document.getElementById('confBtn');if(cb)cb.addEventListener('click',confOrder);
   const hs=document.getElementById('hmSel');if(hs)hs.addEventListener('change',()=>{histMonth=hs.value;render();});
   const apb=document.getElementById('addPastBtn');if(apb)apb.addEventListener('click',showPastOrderModal);
+  const amb=document.getElementById('addMonthBtn');if(amb)amb.addEventListener('click',showMonthSummaryModal);
   const acc=document.getElementById('addCatChip');if(acc)acc.addEventListener('click',showCatModal);
   document.querySelectorAll('[data-to]').forEach(el=>el.addEventListener('click',()=>{const id=el.dataset.to;if(histOpenIds.has(id))histOpenIds.delete(id);else histOpenIds.add(id);render();}));
   document.querySelectorAll('[data-do]').forEach(el=>el.addEventListener('click',()=>{if(confirm('이 발주 기록을 삭제할까요?')){history=history.filter(h=>h.id!==el.dataset.do);lsSet(SK_HIST,JSON.stringify(history));saveToSheets();render();}}));
@@ -913,6 +964,13 @@ function bind(){
   });
 
   // 입고 확인 탭 이벤트
+  document.querySelectorAll('.dlv-qty-edit').forEach(btn=>btn.addEventListener('click',()=>{
+    const di=+btn.dataset.di, ii=+btn.dataset.ii;
+    const pending=deliveryList.filter(d=>!d.confirmed);
+    const d=pending[di]; if(!d)return;
+    const it=d.items[ii]; if(!it)return;
+    openDeliveryQtyNumpad(d, it, ii);
+  }));
   document.querySelectorAll('.dlv-price-btn').forEach(btn=>btn.addEventListener('click',()=>{
     const di=+btn.dataset.di, ii=+btn.dataset.ii;
     const pending=deliveryList.filter(d=>!d.confirmed);
@@ -1348,6 +1406,61 @@ function showPastOrderModal(){
     saveHist();updateTopbar();
     document.getElementById('overlay').innerHTML='';
     alert(`지난 발주 저장 완료!\n${dateVal} ${timeVal}\n총 ${fmt(total)} / ${items.length}개 품목`);
+    curTab='history';render();
+  });
+}
+
+function showMonthSummaryModal(){
+  const now=new Date();
+  const months=[];
+  for(let i=1;i<=24;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    months.push({val:`${d.getFullYear()}-${pad(d.getMonth()+1)}`,label:`${d.getFullYear()}년 ${d.getMonth()+1}월`});
+  }
+  document.getElementById('overlay').innerHTML=`<div class="mbg"><div class="mbox">
+    <h3>월합계 입력</h3>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:14px">월별 총 지출액만 간편하게 입력해요</div>
+    <div class="mf">
+      <label>월 선택</label>
+      <select id="monthSel">${months.map(m=>`<option value="${m.val}">${m.label}</option>`).join('')}</select>
+    </div>
+    <div class="mf">
+      <label>총 지출액 (원)</label>
+      <input id="monthAmt" type="number" inputmode="numeric" placeholder="0" style="font-size:18px">
+    </div>
+    <div class="mf">
+      <label>메모 (선택)</label>
+      <input id="monthMemo" placeholder="예: 1월 합계">
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:4px">⚠ 이미 해당 월에 입력된 내역이 있으면 합산돼요</div>
+    <div class="mbtns">
+      <button class="mbcn" id="monthCancel">취소</button>
+      <button class="mbok" id="monthOk">저장</button>
+    </div>
+  </div></div>`;
+  document.getElementById('monthCancel').addEventListener('click',()=>{document.getElementById('overlay').innerHTML='';});
+  document.getElementById('monthOk').addEventListener('click',()=>{
+    const monthVal=document.getElementById('monthSel').value;
+    const amt=parseInt(document.getElementById('monthAmt').value)||0;
+    const memo=document.getElementById('monthMemo').value.trim()||`${monthVal.replace('-','년 ')}월 합계`;
+    if(!amt){alert('금액을 입력해주세요');return;}
+    // 해당 월 1일 날짜로 저장
+    const [y,m]=monthVal.split('-');
+    const date=new Date(`${y}-${m}-01T09:00:00`);
+    history.push({
+      id:String(Date.now()),
+      date:date.toISOString(),
+      items:[{name:memo,cat:'합계입력',unit:'건',price:amt,qty:1,subtotal:amt}],
+      total:amt,
+      isMonthlySummary:true
+    });
+    history.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    histMonth=monthVal;
+    saveHist();updateTopbar();
+    document.getElementById('overlay').innerHTML='';
+    setSyncStatus('⟳ 저장 중...','#F5A623');
+    syncToSheets().then(ok=>setSyncStatus(ok?'☁ 저장 완료':'✕ 저장 실패',ok?'#1D9E75':'#E24B4A'));
+    setTimeout(()=>setSyncStatus('☁ 동기화','#888'),4000);
     curTab='history';render();
   });
 }
