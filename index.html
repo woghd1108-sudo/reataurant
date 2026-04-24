@@ -1009,6 +1009,7 @@ function bind(){
     });
     render();
   }));
+  document.querySelectorAll('[data-sp]').forEach(el=>el.addEventListener('click',()=>{statsPeriod=el.dataset.sp;render();}));
   const statsApply=document.getElementById('statsApply');
   if(statsApply)statsApply.addEventListener('click',()=>{
     const f=document.getElementById('statsFrom').value;
