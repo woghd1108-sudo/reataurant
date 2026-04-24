@@ -351,7 +351,19 @@ async function loadFromSheets(){
     if(p.priceHist)priceHist=p.priceHist;
     if(p.catPhones)catPhones=p.catPhones;
     if(p.appSettings)appSettings={...appSettings,...p.appSettings};
-    if(p.deliveryList)deliveryList=p.deliveryList;
+    // deliveryList는 로컬이 더 최신이면 로컬 우선
+    if(p.deliveryList){
+      const localDlv=deliveryList;
+      const sheetDlv=p.deliveryList;
+      // 로컬에 confirmed가 더 많으면 로컬 우선
+      const localConfirmed=localDlv.filter(d=>d.confirmed).length;
+      const sheetConfirmed=sheetDlv.filter(d=>d.confirmed).length;
+      if(localConfirmed>=sheetConfirmed&&localDlv.length>0){
+        // 로컬 유지 (더 최신)
+      } else {
+        deliveryList=sheetDlv;
+      }
+    }
     saveCats();saveIng();saveHist();savePH();savePhones();saveSettings();saveDelivery();
     return true;
   }catch(e){return false;}
