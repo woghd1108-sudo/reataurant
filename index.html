@@ -350,7 +350,8 @@ async function loadFromSheets(){
     if(p.priceHist)priceHist=p.priceHist;
     if(p.catPhones)catPhones=p.catPhones;
     if(p.appSettings)appSettings={...appSettings,...p.appSettings};
-    saveCats();saveIng();saveHist();savePH();savePhones();saveSettings();
+    if(p.deliveryList)deliveryList=p.deliveryList;
+    saveCats();saveIng();saveHist();savePH();savePhones();saveSettings();saveDelivery();
     return true;
   }catch(e){return false;}
 }
@@ -441,7 +442,8 @@ async function saveToSheets(){
       history:history,
       priceHist:priceHist,
       catPhones:catPhones,
-      appSettings:appSettings
+      appSettings:appSettings,
+      deliveryList:deliveryList
     })});
     showSyncStatus('✓ 저장 완료','#1D9E75');
     setTimeout(()=>showSyncStatus('☁ 동기화','#888'),2000);
