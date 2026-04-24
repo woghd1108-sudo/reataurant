@@ -1072,15 +1072,37 @@ function bind(){
     const d=pending[di]; if(!d)return;
     if(!confirm('입고 완료로 처리할까요?'))return;
     d.confirmed=true;
-    // 가격 히스토리 업데이트
+    // 가격 히스토리 + 발주내역 수량/금액 업데이트
     d.items.forEach(it=>{
       const ing=ingredients.find(x=>x.name===it.name&&x.cat===it.cat);
+      // 단가 업데이트
       if(ing&&it.actualPrice&&it.actualPrice!==ing.price){
         recordPrice(ing, ing.price, it.actualPrice);
         ing.price=it.actualPrice;
       }
+      // 발주내역 수량/금액 업데이트 (actualQty, actualPrice 반영)
+      const order=history.find(h=>h.id===d.orderId);
+      if(order){
+        const histItem=order.items.find(x=>x.name===it.name&&x.cat===it.cat);
+        if(histItem){
+          const newQty=it.actualQty!=null?it.actualQty:it.qty;
+          const newPrice=it.actualPrice!=null?it.actualPrice:histItem.price;
+          histItem.qty=newQty;
+          histItem.price=newPrice;
+          histItem.subtotal=newQty*newPrice;
+        }
+        // 발주 총액 재계산
+        order.total=order.items.reduce((s,x)=>s+x.subtotal,0);
+        order.netTotal=order.total-(order.refund||0);
+      }
     });
-    saveDelivery();saveIng();savePH();render();
+    saveDelivery();saveIng();savePH();saveHist();
+    setSyncStatus('⟳ 저장 중...','#F5A623');
+    saveToSheets().then(()=>{
+      setSyncStatus('☁ 저장 완료','#1D9E75');
+      setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
+    });
+    render();
   }));
   document.querySelectorAll('.dlv-del-btn').forEach(btn=>btn.addEventListener('click',()=>{
     const di=+btn.dataset.di;
