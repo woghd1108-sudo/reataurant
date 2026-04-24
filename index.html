@@ -575,11 +575,14 @@ function buildDelivery(){
     <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:4px">최근 입고 완료</div>
     ${done.map(d=>{
       const dt=new Date(d.orderDate);
-      const total=d.items.reduce((s,it)=>s+(it.actualPrice||0)*it.qty,0);
-      return`<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:12px 14px;margin-bottom:8px;opacity:0.7">
+      const total=d.items.reduce((s,it)=>s+(it.actualPrice||0)*(it.actualQty!=null?it.actualQty:it.qty),0);
+      return`<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:12px 14px;margin-bottom:8px;opacity:0.8">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="font-size:13px;color:var(--text2)">${dt.getMonth()+1}/${dt.getDate()} 발주 · ${d.items.length}개</div>
-          <div style="font-size:13px;font-weight:500;color:var(--text)">${total>0?Number(total).toLocaleString()+'원':'단가 미입력'}</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">${total>0?Number(total).toLocaleString()+'원':'단가 미입력'}</div>
+            <button class="dlv-done-del-btn" data-done-id="${d.orderId}" style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid #f09595;background:transparent;color:#a32d2d;cursor:pointer">삭제</button>
+          </div>
         </div>
       </div>`;
     }).join('')}`:'';
@@ -607,7 +610,7 @@ function buildHist(){
       return`<div class="og"><div class="ogl">${date} · 합계 ${fmt(dt)}</div>${orders.map(o=>{
         const io=histOpenIds.has(o.id);
         return`<div class="oc"><div class="och" data-to="${o.id}"><div><div class="odt">${new Date(o.date).getHours()}:${pad(new Date(o.date).getMinutes())} 발주</div><div class="oic">${o.items.length}개 품목</div></div><div class="otc">${fmt(o.total)}</div></div><div class="od${io?' open':''}">
-          ${o.items.map(it=>`<div class="odr"><div><div>${it.name}</div><div class="odi">${fmt(it.price)}/${it.unit} × ${it.qty}</div></div><div class="ods">${fmt(it.subtotal)}</div></div>`).join('')}
+          ${o.items.map(it=>`<div class="odr"><div><div>${it.name}</div><div class="odi">${it.unit} × <span class="hist-qty-edit" data-oid="${o.id}" data-iname="${it.name}" style="border-bottom:1px dashed var(--border2);cursor:pointer;color:var(--amber)">${it.qty}</span></div></div><div class="ods">${fmt(it.subtotal)}</div></div>`).join('')}
           <button class="odb" data-do="${o.id}">이 발주 삭제</button></div></div>`;
       }).join('')}</div>`;
     }).join('');
@@ -937,7 +940,19 @@ function bind(){
   document.querySelectorAll('[data-qp]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.qp);if(i){i.qty++;saveIng();render();}}));
   document.querySelectorAll('[data-qm]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.qm);if(i&&i.qty>0){i.qty--;saveIng();render();}}));
   document.querySelectorAll('[data-qedit]').forEach(el=>el.addEventListener('click',()=>openQtyNumpad(+el.dataset.qedit)));
-  document.querySelectorAll('[data-di]').forEach(el=>el.addEventListener('click',()=>{const i=ingredients.find(x=>x.id===+el.dataset.di);if(i&&confirm(`"${i.name}" 삭제할까요?`)){ingredients=ingredients.filter(x=>x.id!==+el.dataset.di);lsSet(SK_ING,JSON.stringify(ingredients));saveToSheets();render();}}));
+  document.querySelectorAll('[data-di]').forEach(el=>el.addEventListener('click',()=>{
+    const i=ingredients.find(x=>x.id===+el.dataset.di);
+    if(i&&confirm(`"${i.name}" 삭제할까요?`)){
+      ingredients=ingredients.filter(x=>x.id!==+el.dataset.di);
+      lsSet(SK_ING,JSON.stringify(ingredients));
+      setSyncStatus('⟳ 저장 중...','#F5A623');
+      saveToSheets().then(()=>{
+        setSyncStatus('☁ 저장 완료','#1D9E75');
+        setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
+      });
+      render();
+    }
+  }));
   const ab=document.getElementById('addIngBtn');if(ab)ab.addEventListener('click',showAddModal);
   const cb=document.getElementById('confBtn');if(cb)cb.addEventListener('click',confOrder);
   const hs=document.getElementById('hmSel');if(hs)hs.addEventListener('change',()=>{histMonth=hs.value;render();});
@@ -945,8 +960,55 @@ function bind(){
   const amb=document.getElementById('addMonthBtn');if(amb)amb.addEventListener('click',showMonthSummaryModal);
   const acc=document.getElementById('addCatChip');if(acc)acc.addEventListener('click',showCatModal);
   document.querySelectorAll('[data-to]').forEach(el=>el.addEventListener('click',()=>{const id=el.dataset.to;if(histOpenIds.has(id))histOpenIds.delete(id);else histOpenIds.add(id);render();}));
-  document.querySelectorAll('[data-do]').forEach(el=>el.addEventListener('click',()=>{if(confirm('이 발주 기록을 삭제할까요?')){history=history.filter(h=>h.id!==el.dataset.do);lsSet(SK_HIST,JSON.stringify(history));saveToSheets();render();}}));
-  document.querySelectorAll('[data-sp]').forEach(el=>el.addEventListener('click',()=>{statsPeriod=el.dataset.sp;render();}));
+  document.querySelectorAll('[data-do]').forEach(el=>el.addEventListener('click',()=>{
+    if(confirm('이 발주 기록을 삭제할까요?')){
+      const orderId=el.dataset.do;
+      history=history.filter(h=>h.id!==orderId);
+      // 연결된 입고대기도 삭제
+      deliveryList=deliveryList.filter(d=>d.orderId!==orderId);
+      lsSet(SK_HIST,JSON.stringify(history));
+      saveDelivery();
+      setSyncStatus('⟳ 저장 중...','#F5A623');
+      saveToSheets().then(()=>{
+        setSyncStatus('☁ 저장 완료','#1D9E75');
+        setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
+      });
+      render();
+    }
+  }));
+  // 입고완료 삭제
+  document.querySelectorAll('.dlv-done-del-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    if(!confirm('입고 완료 기록을 삭제할까요?'))return;
+    deliveryList=deliveryList.filter(d=>d.orderId!==btn.dataset.doneId);
+    saveDelivery();render();
+  }));
+  document.querySelectorAll('.hist-qty-edit').forEach(el=>el.addEventListener('click',()=>{
+    const oid=el.dataset.oid, iname=el.dataset.iname;
+    const order=history.find(h=>h.id===oid); if(!order)return;
+    const item=order.items.find(it=>it.name===iname); if(!item)return;
+    const newQty=prompt(`${iname} 수량 수정 (현재: ${item.qty})`);
+    if(newQty===null)return;
+    const nv=parseFloat(newQty);
+    if(isNaN(nv)||nv<=0){alert('올바른 수량을 입력해주세요');return;}
+    item.qty=nv;
+    item.subtotal=item.price*nv;
+    order.total=order.items.reduce((s,it)=>s+it.subtotal,0);
+    order.netTotal=order.total-(order.refund||0);
+    // 연결된 입고대기 수량도 업데이트
+    const dlv=deliveryList.find(d=>d.orderId===oid);
+    if(dlv){
+      const dlvItem=dlv.items.find(it=>it.name===iname);
+      if(dlvItem)dlvItem.qty=nv;
+      saveDelivery();
+    }
+    saveHist();
+    setSyncStatus('⟳ 저장 중...','#F5A623');
+    saveToSheets().then(()=>{
+      setSyncStatus('☁ 저장 완료','#1D9E75');
+      setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
+    });
+    render();
+  }));
   const statsApply=document.getElementById('statsApply');
   if(statsApply)statsApply.addEventListener('click',()=>{
     const f=document.getElementById('statsFrom').value;
