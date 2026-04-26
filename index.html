@@ -433,17 +433,28 @@ function load(){
     setTimeout(()=>setSyncStatus('☁ 동기화','#888'),3000);
   });
 }
-const saveIng=()=>{lsSet(SK_ING,JSON.stringify(ingredients));scheduleSave();};
-const saveHist=()=>{lsSet(SK_HIST,JSON.stringify(history));scheduleSave();};
-const savePH=()=>{lsSet(SK_PH,JSON.stringify(priceHist));scheduleSave();};
+// localStorage만 저장 (빠른 터치용)
+const saveIng=()=>{lsSet(SK_ING,JSON.stringify(ingredients));};
+const saveHist=()=>{lsSet(SK_HIST,JSON.stringify(history));};
+const savePH=()=>{lsSet(SK_PH,JSON.stringify(priceHist));};
 const savePhones=()=>{lsSet(SK_PHONES,JSON.stringify(catPhones));scheduleSave();};
 const saveSettings=()=>{lsSet(SK_SETTINGS,JSON.stringify(appSettings));scheduleSave();};
 const saveDelivery=()=>{lsSet(SK_DELIVERY,JSON.stringify(deliveryList));};
+const saveCats=()=>{try{localStorage.setItem(SK_CATS,JSON.stringify(customCats));}catch{} scheduleSave();}
+
+// 중요한 순간에만 구글시트 저장 (발주확정, 입고완료, 삭제 등)
+function saveAllToSheets(){
+  setSyncStatus('⟳ 저장 중...','#F5A623');
+  saveToSheets().then(()=>{
+    setSyncStatus('☁ 저장 완료','#1D9E75');
+    setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
+  });
+}
 
 let saveTimer=null;
 function scheduleSave(){
   if(saveTimer)clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>saveToSheets(),2000);
+  saveTimer=setTimeout(()=>saveToSheets(),5000);
 }
 
 async function saveToSheets(){
@@ -959,11 +970,7 @@ function bind(){
     if(i&&confirm(`"${i.name}" 삭제할까요?`)){
       ingredients=ingredients.filter(x=>x.id!==+el.dataset.di);
       lsSet(SK_ING,JSON.stringify(ingredients));
-      setSyncStatus('⟳ 저장 중...','#F5A623');
-      saveToSheets().then(()=>{
-        setSyncStatus('☁ 저장 완료','#1D9E75');
-        setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
-      });
+      saveAllToSheets();
       render();
     }
   }));
@@ -982,11 +989,7 @@ function bind(){
       deliveryList=deliveryList.filter(d=>d.orderId!==orderId);
       lsSet(SK_HIST,JSON.stringify(history));
       saveDelivery();
-      setSyncStatus('⟳ 저장 중...','#F5A623');
-      saveToSheets().then(()=>{
-        setSyncStatus('☁ 저장 완료','#1D9E75');
-        setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
-      });
+      saveAllToSheets();
       render();
     }
   }));
@@ -1016,11 +1019,7 @@ function bind(){
       saveDelivery();
     }
     saveHist();
-    setSyncStatus('⟳ 저장 중...','#F5A623');
-    saveToSheets().then(()=>{
-      setSyncStatus('☁ 저장 완료','#1D9E75');
-      setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
-    });
+    saveAllToSheets();
     render();
   }));
   document.querySelectorAll('[data-sp]').forEach(el=>el.addEventListener('click',()=>{statsPeriod=el.dataset.sp;render();}));
@@ -1111,11 +1110,7 @@ function bind(){
       }
     });
     saveDelivery();saveIng();savePH();saveHist();
-    setSyncStatus('⟳ 저장 중...','#F5A623');
-    saveToSheets().then(()=>{
-      setSyncStatus('☁ 저장 완료','#1D9E75');
-      setTimeout(()=>setSyncStatus('☁ 동기화','#888'),2000);
-    });
+    saveAllToSheets();
     render();
   }));
   document.querySelectorAll('.dlv-del-btn').forEach(btn=>btn.addEventListener('click',()=>{
@@ -1184,9 +1179,7 @@ function confOrder(){
     ingredients.forEach(i=>{if(i._origPrice&&i._origPrice!==i.price){recordPrice(i,i._origPrice,i.price);}i._origPrice=null;i.qty=0;i.priceChanged=false;});
     saveHist();saveIng();savePH();updateTopbar();
     render();
-    setSyncStatus('⟳ 저장 중...','#F5A623');
-    syncToSheets().then(ok=>setSyncStatus(ok?'☁ 저장 완료':'✕ 저장 실패',ok?'#1D9E75':'#E24B4A'));
-    setTimeout(()=>setSyncStatus('☁ 동기화','#888'),4000);
+    saveAllToSheets();
 
     // STEP 2: 저장 완료 후 바로 발송 화면
     const fullText=buildOrderTextFull(items,total,refund,dateVal,todayTime);
