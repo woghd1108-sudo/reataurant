@@ -530,8 +530,8 @@ function buildOrder(){
 
 /* DELIVERY CONFIRMATION TAB */
 function buildDelivery(){
-  const pending=deliveryList.filter(d=>!d.confirmed);
-  const done=deliveryList.filter(d=>d.confirmed).slice(0,10);
+  const pending=deliveryList.filter(d=>!d.confirmed).sort((a,b)=>new Date(b.orderDate)-new Date(a.orderDate));
+  const done=deliveryList.filter(d=>d.confirmed).sort((a,b)=>new Date(b.orderDate)-new Date(a.orderDate)).slice(0,15);
   let pendingHtml='';
   if(pending.length===0){
     pendingHtml='<div class="no-h">입고 대기 중인 발주가 없어요</div>';
