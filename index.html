@@ -652,13 +652,15 @@ function buildStats(){
   else if(statsPeriod==='6개월')cutoff=new Date(now.getFullYear(),now.getMonth()-6,now.getDate());
   else cutoff=new Date(now.getFullYear()-1,now.getMonth(),now.getDate());
   const fl=history.filter(h=>new Date(h.date)>=cutoff&&(!cutoffEnd||new Date(h.date)<=cutoffEnd));
-  const total=fl.reduce((s,h)=>s+h.total,0), tq=fl.reduce((s,h)=>s+h.items.reduce((ss,it)=>ss+it.qty,0),0);
+  const total=fl.reduce((s,h)=>s+h.total,0), tq=Math.round(fl.reduce((s,h)=>s+h.items.reduce((ss,it)=>ss+it.qty,0),0)*100)/100;
   const avg=fl.length>0?Math.round(total/fl.length):0;
   const mm={};fl.forEach(h=>{const d=new Date(h.date);const k=`${d.getMonth()+1}월`;mm[k]=(mm[k]||0)+h.total;});
   const m6=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const mv=m6.map(m=>mm[m]||0);const mx=Math.max(...mv,1);
   const cm={};getCatsOnly().forEach(c=>cm[c]={amt:0,qty:0});
   fl.forEach(h=>h.items.forEach(it=>{if(cm[it.cat]){cm[it.cat].amt+=it.subtotal;cm[it.cat].qty+=it.qty;}}));
+  // 부동소수점 보정
+  Object.keys(cm).forEach(c=>{cm[c].qty=Math.round(cm[c].qty*100)/100;});
   const ps=['1개월','3개월','6개월','1년','직접선택'];
   const todayStr=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const customDatePicker=statsPeriod==='직접선택'?`
@@ -674,7 +676,7 @@ function buildStats(){
   <div class="sg"><div class="sbc"><div class="st">총 지출액</div><div class="sn">${fmtS(total)}</div><div class="ss">발주 ${fl.length}회</div></div>
   <div class="sbc"><div class="st">발주 1회 평균</div><div class="sn">${fmtS(avg)}</div><div class="ss">총 수량 ${tq.toLocaleString()}개</div></div></div>
   <div class="bcc"><div class="bct">월별 발주 금액</div>${m6.map((m,i)=>{const v=mv[i];const p=Math.round((v/mx)*100);const ia=v===mx&&v>0;return`<div class="br"><div class="bl">${m}</div><div class="bt"><div class="bf${ia?' ac':''}" style="width:${p}%"><span>${v>0?fmtS(v):''}</span></div></div></div>`;}).join('')}</div>
-  <div class="bcc"><div class="bct">카테고리별 발주 합계</div><div class="csg">${getCatsOnly().map(c=>{const d=cm[c]||{amt:0,qty:0};return`<div class="csc${d.amt===0?' z':''}"><span class="csn">${c}</span><div><div class="csa">${d.amt>0?fmtS(d.amt):'—'}</div><div class="csq">${d.qty>0?`${d.qty}개`:''}</div></div></div>`;}).join('')}</div></div>`;
+  <div class="bcc"><div class="bct">카테고리별 발주 합계</div><div class="csg">${getCatsOnly().map(c=>{const d=cm[c]||{amt:0,qty:0};const qty=Math.round(d.qty*100)/100;return`<div class="csc${d.amt===0?' z':''}"><span class="csn">${c}</span><div><div class="csa">${d.amt>0?fmtS(Math.round(d.amt)):'—'}</div><div class="csq">${qty>0?`${qty}개`:''}</div></div></div>`;}).join('')}</div></div>`;
 }
 
 /* PRICE HISTORY TAB */
