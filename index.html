@@ -371,7 +371,6 @@ async function loadFromSheets(){
 let customCats=[];
 function getCats(){return['전체',...customCats];}
 function getCatsOnly(){return customCats;}
-function saveCats(){try{localStorage.setItem(SK_CATS,JSON.stringify(customCats));}catch{} scheduleSave();}
 const DEFAULT_ING=[
   {id:1,name:'대파',cat:'야채',unit:'단',price:1200,qty:0},
   {id:2,name:'양파',cat:'야채',unit:'kg',price:1800,qty:0},
