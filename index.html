@@ -639,14 +639,39 @@ function loadAll() {
     renderItemList();
   });
 
-  // 발주 내역 (최근 3개월)
+  // 발주 내역 - 구버전(orders/키) + 신버전(orders/월/키) 둘 다 읽기
   const now = new Date();
+
+  // 구버전 데이터 (orders 바로 아래)
+  onValue(dbRef('orders'), snap => {
+    // 월별 하위 노드가 아닌 직접 발주 데이터만 처리
+    allOrders = allOrders.filter(o => o._isNew); // 신버전만 남기고
+    snap.forEach(child => {
+      const val = child.val();
+      // 월별 구조면 건너뜀 (값이 객체이고 createdAt이 없으면 월 노드)
+      if (val && val.createdAt) {
+        allOrders.push({ key: child.key, month: monthKey(val.createdAt), _isNew: false, ...val });
+      }
+    });
+    allOrders.sort((a, b) => b.createdAt - a.createdAt);
+    updateHeader();
+    if (document.getElementById('page-history').classList.contains('active')) renderHistory();
+    if (document.getElementById('page-stats').classList.contains('active')) renderStats();
+  });
+
+  // 신버전 데이터 (orders/월/키)
   for (let i = 0; i < 3; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const ym = monthKey(d.getTime());
     onValue(dbRef('orders/' + ym), snap => {
-      allOrders = allOrders.filter(o => o.month !== ym);
-      snap.forEach(child => allOrders.push({ key: child.key, month: ym, ...child.val() }));
+      // 신버전 데이터 교체
+      allOrders = allOrders.filter(o => !(o._isNew && o.month === ym));
+      snap.forEach(child => {
+        const val = child.val();
+        if (val && val.createdAt) {
+          allOrders.push({ key: child.key, month: ym, _isNew: true, ...val });
+        }
+      });
       allOrders.sort((a, b) => b.createdAt - a.createdAt);
       updateHeader();
       if (document.getElementById('page-history').classList.contains('active')) renderHistory();
