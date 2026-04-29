@@ -1003,63 +1003,61 @@ function renderHistory() {
 
   el.innerHTML = Object.entries(byDate).map(([date, dayOrders]) => {
     const dayTotal = dayOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + i.qty * i.price, 0), 0);
-    const dayPending = dayOrders.filter(o => (o.items || []).some(i => !i.received)).length;
     const groupId = 'dg-' + date.replace(/-/g, '');
 
-    const ordersHtml = dayOrders.map(order => {
-      const total = (order.items || []).reduce((s, i) => s + i.qty * i.price, 0);
-      const recvd = (order.items || []).filter(i => i.received).length;
-      const total_items = (order.items || []).length;
-      const allRecv = recvd === total_items && total_items > 0;
-      const badge = allRecv
-        ? '<span class="badge badge-green">입고완료</span>'
-        : recvd > 0
-          ? `<span class="badge badge-amber">부분입고 ${recvd}/${total_items}</span>`
-          : '<span class="badge badge-gray">발주중</span>';
-      const d = new Date(order.createdAt);
-      const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    // 그날 모든 발주의 품목을 카테고리별로 합치기
+    const catMap = {};
+    dayOrders.forEach(order => {
+      (order.items || []).forEach(item => {
+        if (!catMap[item.cat]) catMap[item.cat] = [];
+        // 중복 품목은 수량 합산
+        const existing = catMap[item.cat].find(i => i.name === item.name);
+        if (existing) {
+          existing.qty = +(existing.qty + item.qty).toFixed(2);
+          existing.received = existing.received && item.received;
+        } else {
+          catMap[item.cat].push({
+            name: item.name, unit: item.unit, qty: item.qty,
+            price: item.price, received: item.received,
+            orderKey: order.key, orderMonth: order.month,
+            itemIdx: (order.items || []).indexOf(item)
+          });
+        }
+      });
+    });
 
-      return `<div class="order-card2" id="ocard-${order.key}">
-        <div class="order-hdr" onclick="toggleOrderCard('${order.key}','${order.month}')">
-          <div style="flex:1">
-            <div class="flex items-center gap8">
-              <span class="mono fw5">${timeStr}</span>
-              ${badge}
-              ${order.memo ? `<span class="text-xs text3">· ${order.memo}</span>` : ''}
-            </div>
-            <div class="flex items-center gap8 mt4">
-              <span class="text-xs text2">${total_items}품목</span>
-              <span class="text-xs mono">${commas(total)}원</span>
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openShareByKey('${order.key}','${order.month}')">공유</button>
-            <svg id="oarr-${order.key}" viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text3);flex-shrink:0;transition:transform .2s">
-              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-            </svg>
-          </div>
+    const totalItems = Object.values(catMap).reduce((s, items) => s + items.length, 0);
+    const pendingItems = Object.values(catMap).flat().filter(i => !i.received).length;
+    const allRecv = pendingItems === 0 && totalItems > 0;
+    const badge = allRecv
+      ? '<span class="badge badge-green">입고완료</span>'
+      : pendingItems > 0
+        ? `<span class="badge badge-gray" style="font-size:10px">대기 ${pendingItems}</span>`
+        : '';
+
+    // 카테고리별 품목 목록 (접힌 상태에서 보이는 요약)
+    const catSummary = Object.entries(catMap).map(([cat, items]) => {
+      const catTotal = items.reduce((s, i) => s + i.qty * i.price, 0);
+      return `<div style="padding:9px 12px;border-bottom:0.5px solid var(--border);background:var(--bg2)">
+        <div class="flex items-center gap8" style="margin-bottom:5px">
+          <span style="font-size:12px;font-weight:700;color:var(--amber);min-width:60px">${cat}</span>
+          <span class="mono text-xs text2">${commas(catTotal)}원</span>
         </div>
-        <div class="order-body" id="obody-${order.key}">
-          ${(order.items || []).map((item, idx) => `
-            <div class="order-item">
-              <button class="chk-btn ${item.received ? 'checked' : ''}" onclick="toggleReceived('${order.key}','${order.month}',${idx})">
-                ${item.received ? '<svg viewBox="0 0 20 20" fill="white" width="11" height="11"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : ''}
-              </button>
-              <span style="flex:1;${item.received ? 'text-decoration:line-through;color:var(--text3)' : ''}">${item.name}</span>
-              <span class="mono text-xs">${item.qty}${item.unit}</span>
-              <span class="mono text-xs text2">${commas(item.price)}원</span>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${items.map(item => `
+            <div style="display:flex;align-items:center;gap:4px;background:${item.received ? 'var(--bg3)' : 'var(--bg2)'};border:0.5px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer"
+              onclick="toggleReceivedFromSummary('${item.orderKey}','${item.orderMonth}',${item.itemIdx})">
+              <span style="font-size:12px;${item.received ? 'text-decoration:line-through;color:var(--text3)' : ''}">${item.name}</span>
+              <span class="mono text-xs text3">${item.qty}${item.unit}</span>
+              ${item.received ? '<svg viewBox="0 0 20 20" fill="currentColor" style="width:10px;height:10px;color:var(--green)"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : ''}
             </div>`).join('')}
-          <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px">
-            <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal('${order.key}','${order.month}')">수정</button>
-            <button class="btn btn-danger btn-xs" onclick="deleteOrder('${order.key}','${order.month}')">삭제</button>
-          </div>
         </div>
       </div>`;
     }).join('');
 
     // 날짜 포맷
     const [y, m, d2] = date.split('-');
-    const dateObj = new Date(date);
+    const dateObj = new Date(date + 'T12:00:00');
     const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
     const dateLabel = `${parseInt(m)}/${parseInt(d2)} (${dayName})`;
 
@@ -1067,14 +1065,18 @@ function renderHistory() {
       <div class="date-group-hdr open" id="${groupId}-hdr" onclick="toggleDateGroup('${groupId}')">
         <span style="font-size:13px;font-weight:700;color:var(--cream);flex:1">${dateLabel}</span>
         <span class="text-xs mono" style="color:var(--amber-light)">${dayOrders.length}건 · ${commas(dayTotal)}원</span>
-        ${dayPending > 0 ? `<span class="badge badge-amber" style="font-size:10px">입고대기 ${dayPending}</span>` : ''}
+        ${badge}
         <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteDateGroup('${date}')" style="font-size:10px;padding:0 6px;height:20px;border-color:rgba(226,75,74,.5)">전체삭제</button>
         <svg id="${groupId}-arr" viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#888;flex-shrink:0;transition:transform .2s;transform:rotate(180deg)">
           <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
         </svg>
       </div>
       <div class="date-group-body open" id="${groupId}-body">
-        ${ordersHtml}
+        ${catSummary}
+        <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px;background:var(--bg3)">
+          <button class="btn btn-ghost btn-xs" onclick="openDayShareModal('${date}')">공유</button>
+          <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal()">+ 추가</button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1098,6 +1100,67 @@ function toggleOrderCard(key, month) {
   const arr = document.getElementById('oarr-' + key);
   const open = body.classList.toggle('open');
   if (arr) arr.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+
+async function toggleReceivedFromSummary(key, month, idx) {
+  await toggleReceived(key, month, idx);
+}
+
+function openDayShareModal(date) {
+  const dayOrders = allOrders.filter(o => toDateStr(o.createdAt) === date);
+  if (!dayOrders.length) return;
+  // 카테고리별 합산
+  const catMap = {};
+  dayOrders.forEach(order => {
+    (order.items || []).forEach(item => {
+      if (!catMap[item.cat]) catMap[item.cat] = [];
+      const ex = catMap[item.cat].find(i => i.name === item.name);
+      if (ex) ex.qty = +(ex.qty + item.qty).toFixed(2);
+      else catMap[item.cat].push({ ...item });
+    });
+  });
+  const total = dayOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + i.qty * i.price, 0), 0);
+  const dateObj = new Date(date + 'T12:00:00');
+  const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
+  const [y, m, d] = date.split('-');
+  const dateLabel = `${parseInt(m)}/${parseInt(d)} (${dayName})`;
+  let txt = `[발주] ${dateLabel}
+───────────────
+`;
+  Object.entries(catMap).forEach(([cat, items]) => {
+    txt += `▶ ${cat}
+`;
+    items.forEach(i => txt += `  ${i.name} ${i.qty}${i.unit}
+`);
+  });
+  txt += `───────────────
+합계: ${commas(total)}원`;
+  try { navigator.clipboard.writeText(txt).catch(() => {}); } catch {}
+
+  document.getElementById('share-sheet').innerHTML = `
+    <div style="display:flex;align-items:center;margin-bottom:6px">
+      <div style="font-size:16px;font-weight:700;flex:1">📋 ${dateLabel} 발주 공유</div>
+      <button onclick="closeModal('share-modal')" style="background:none;border:none;font-size:22px;color:var(--text2);cursor:pointer">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--green);margin-bottom:12px">내용이 클립보드에 복사됐어요</div>
+    <div style="background:var(--bg3);border-radius:var(--r);padding:12px;font-size:12px;font-family:'JetBrains Mono',monospace;white-space:pre;margin-bottom:14px;overflow-x:auto">${escHtml(txt)}</div>
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">카테고리별 문자 발송</div>
+    ${Object.entries(catMap).map(([cat, items]) => {
+      const contact = catPhones[cat] || {};
+      const phone = typeof contact === 'string' ? contact : (contact.phone || '');
+      const url = typeof contact === 'object' ? (contact.url || '') : '';
+      const smsText = makeCatSmsText(cat, items);
+      const smsHref = phone ? 'sms:' + phone + '?body=' + encodeURIComponent(smsText) : 'sms:?body=' + encodeURIComponent(smsText);
+      let btns = '';
+      if (phone) btns += '<a href="' + smsHref + '" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:12px 14px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--dark);text-decoration:none"><span style="font-size:13px;font-weight:500;color:var(--cream)">📱 ' + cat + '</span><span style="font-size:12px;color:var(--amber-light)">' + phone + '</span></a>';
+      if (url) btns += '<a href="' + url + '" rel="noopener noreferrer" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:12px 14px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);text-decoration:none"><span style="font-size:13px;font-weight:500;color:var(--text)">🔗 ' + cat + ' 바로가기</span><span style="font-size:12px;color:var(--amber)">열기 →</span></a>';
+      if (!phone && !url) btns += '<div style="display:flex;justify-content:space-between;padding:12px 14px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);margin-bottom:6px"><span style="font-size:13px;color:var(--text2)">📦 ' + cat + '</span><span style="font-size:12px;color:var(--red)">미등록</span></div>';
+      return btns;
+    }).join('')}
+    <button onclick="copyText(${JSON.stringify(txt)})" style="width:100%;padding:12px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;cursor:pointer;color:var(--text2)">📋 전체 다시 복사</button>
+  `;
+  openModal('share-modal');
 }
 
 async function toggleReceived(key, month, idx) {
