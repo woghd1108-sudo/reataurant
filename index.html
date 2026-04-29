@@ -870,10 +870,10 @@ function openShareModal(order) {
         <span style="font-size:14px;font-weight:500;color:var(--cream)">📱 ${cat} 문자</span>
         <span style="font-size:12px;color:var(--amber-light)">${phone}</span>
       </a>`;
-      if (url) btns += `<button onclick="location.href='${url}'" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:13px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:inherit">
+      if (url) btns += `<a href="${url}" rel="noopener noreferrer" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:13px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);text-decoration:none">
         <span style="font-size:14px;font-weight:500;color:var(--text)">🔗 ${cat} 바로가기</span>
         <span style="font-size:12px;color:var(--amber)" class="mono">열기 →</span>
-      </button>`;
+      </a>`;
       if (!phone && !url) btns += `<div style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:13px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3)">
         <span style="font-size:14px;color:var(--text2)">📦 ${cat}</span>
         <span style="font-size:12px;color:var(--red)">번호/URL 미등록</span>
