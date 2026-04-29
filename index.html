@@ -864,11 +864,21 @@ function openShareModal(order) {
     const phone = typeof catContact === 'string' ? catContact : (catContact.phone || '');
     const url = typeof catContact === 'object' ? (catContact.url || '') : '';
       const smsText = makeCatSmsText(cat, catMap[cat]);
-      const href = phone ? `sms:${phone}?body=${encodeURIComponent(smsText)}` : `sms:?body=${encodeURIComponent(smsText)}`;
-      return `<a href="${href}" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:8px;padding:14px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:${phone ? 'var(--dark)' : 'var(--bg3)'};text-decoration:none">
-        <span style="font-size:14px;font-weight:500;color:${phone ? 'var(--cream)' : 'var(--text2)'}">📱 ${cat}</span>
-        <span style="font-size:12px;color:${phone ? 'var(--amber-light)' : 'var(--red)'}">${phone || '번호 미등록'}</span>
+      const smsHref = phone ? `sms:${phone}?body=${encodeURIComponent(smsText)}` : `sms:?body=${encodeURIComponent(smsText)}`;
+      let btns = '';
+      if (phone) btns += `<a href="${smsHref}" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:13px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--dark);text-decoration:none">
+        <span style="font-size:14px;font-weight:500;color:var(--cream)">📱 ${cat} 문자</span>
+        <span style="font-size:12px;color:var(--amber-light)">${phone}</span>
       </a>`;
+      if (url) btns += `<button onclick="window.open('${url}')" style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:13px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);cursor:pointer;font-family:inherit">
+        <span style="font-size:14px;font-weight:500;color:var(--text)">🔗 ${cat} 바로가기</span>
+        <span style="font-size:12px;color:var(--amber)" class="mono">열기 →</span>
+      </button>`;
+      if (!phone && !url) btns += `<div style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:6px;padding:13px 16px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3)">
+        <span style="font-size:14px;color:var(--text2)">📦 ${cat}</span>
+        <span style="font-size:12px;color:var(--red)">번호/URL 미등록</span>
+      </div>`;
+      return btns;
     }).join('')}
     <button onclick="copyText(${JSON.stringify(fullText)})" style="width:100%;margin-top:4px;padding:13px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;cursor:pointer;color:var(--text2)">📋 전체 내용 다시 복사</button>
   `;
