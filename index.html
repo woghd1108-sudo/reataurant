@@ -160,7 +160,28 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 
 /* ── 발주내역 ── */
 .order-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r2);margin:0 14px 8px;overflow:hidden;}
+.date-group{margin:0 14px 10px;}
+.date-group-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--dark);border-radius:var(--r2);cursor:pointer;margin-bottom:4px;}
+.date-group-hdr.open{border-radius:var(--r2) var(--r2) 0 0;margin-bottom:0;}
+.date-group-body{display:none;border:0.5px solid var(--border);border-top:none;border-radius:0 0 var(--r2) var(--r2);overflow:hidden;}
+.date-group-body.open{display:block;}
+.order-card2{background:var(--bg2);border-bottom:0.5px solid var(--border);overflow:hidden;}
+.order-card2:last-child{border-bottom:none;}
 .order-hdr{display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:pointer;}
+.date-group{margin:0 14px 10px;}
+.date-group-hdr{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--dark);border-radius:var(--r2);cursor:pointer;}
+.date-group-hdr.open{border-radius:var(--r2) var(--r2) 0 0;}
+.date-group-body{display:none;border:0.5px solid var(--border);border-top:none;border-radius:0 0 var(--r2) var(--r2);overflow:hidden;}
+.date-group-body.open{display:block;}
+.order-card2{background:var(--bg2);border-bottom:0.5px solid var(--border);overflow:hidden;}
+.order-card2:last-child{border-bottom:none;}
+.date-group{margin:0 14px 10px;}
+.date-group-hdr{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--dark);border-radius:var(--r2);cursor:pointer;margin-bottom:0;}
+.date-group-hdr.open{border-radius:var(--r2) var(--r2) 0 0;}
+.date-group-body{display:none;border:0.5px solid var(--border);border-top:none;border-radius:0 0 var(--r2) var(--r2);overflow:hidden;}
+.date-group-body.open{display:block;}
+.order-card2{background:var(--bg2);border-bottom:0.5px solid var(--border);overflow:hidden;}
+.order-card2:last-child{border-bottom:none;}
 .order-body{display:none;border-top:0.5px solid var(--border);}
 .order-body.open{display:block;}
 .order-item{display:flex;align-items:center;padding:9px 12px;border-bottom:0.5px solid var(--border);gap:8px;font-size:13px;}
@@ -969,62 +990,106 @@ function renderHistory() {
 
   if (!orders.length) {
     el.innerHTML = '<div class="empty-state">발주 내역 없음</div>';
+    el.innerHTML += `<div style="padding:0 14px 8px"><button class="btn btn-ghost w-full" style="border-style:dashed;height:44px" onclick="openPastOrderModal()">+ 지난 발주 수동 입력</button></div>`;
     return;
   }
 
-  el.innerHTML = orders.map(order => {
-    const total = (order.items || []).reduce((s, i) => s + i.qty * i.price, 0);
-    const recvd = (order.items || []).filter(i => i.received).length;
-    const total_items = (order.items || []).length;
-    const allRecv = recvd === total_items && total_items > 0;
-    const badge = allRecv
-      ? '<span class="badge badge-green">입고완료</span>'
-      : recvd > 0
-        ? `<span class="badge badge-amber">부분입고 ${recvd}/${total_items}</span>`
-        : '<span class="badge badge-gray">발주중</span>';
+  // 날짜별로 그룹핑
+  const byDate = {};
+  orders.forEach(o => {
+    const d = toDateStr(o.createdAt);
+    (byDate[d] = byDate[d] || []).push(o);
+  });
 
-    return `<div class="order-card" id="ocard-${order.key}">
-      <div class="order-hdr" onclick="toggleOrderCard('${order.key}','${order.month}')">
-        <div style="flex:1">
-          <div class="flex items-center gap8">
-            <span class="mono fw5">${fmtDT(order.createdAt)}</span>
-            ${badge}
+  el.innerHTML = Object.entries(byDate).map(([date, dayOrders]) => {
+    const dayTotal = dayOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => ss + i.qty * i.price, 0), 0);
+    const dayPending = dayOrders.filter(o => (o.items || []).some(i => !i.received)).length;
+    const groupId = 'dg-' + date.replace(/-/g, '');
+
+    const ordersHtml = dayOrders.map(order => {
+      const total = (order.items || []).reduce((s, i) => s + i.qty * i.price, 0);
+      const recvd = (order.items || []).filter(i => i.received).length;
+      const total_items = (order.items || []).length;
+      const allRecv = recvd === total_items && total_items > 0;
+      const badge = allRecv
+        ? '<span class="badge badge-green">입고완료</span>'
+        : recvd > 0
+          ? `<span class="badge badge-amber">부분입고 ${recvd}/${total_items}</span>`
+          : '<span class="badge badge-gray">발주중</span>';
+      const d = new Date(order.createdAt);
+      const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+      return `<div class="order-card2" id="ocard-${order.key}">
+        <div class="order-hdr" onclick="toggleOrderCard('${order.key}','${order.month}')">
+          <div style="flex:1">
+            <div class="flex items-center gap8">
+              <span class="mono fw5">${timeStr}</span>
+              ${badge}
+              ${order.memo ? `<span class="text-xs text3">· ${order.memo}</span>` : ''}
+            </div>
+            <div class="flex items-center gap8 mt4">
+              <span class="text-xs text2">${total_items}품목</span>
+              <span class="text-xs mono">${commas(total)}원</span>
+            </div>
           </div>
-          <div class="flex items-center gap8 mt4">
-            <span class="text-xs text2">${total_items}품목</span>
-            <span class="text-xs mono">${commas(total)}원</span>
-            ${order.memo ? `<span class="text-xs text3">· ${order.memo}</span>` : ''}
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openShareByKey('${order.key}','${order.month}')">공유</button>
+            <svg id="oarr-${order.key}" viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text3);flex-shrink:0;transition:transform .2s">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+            </svg>
           </div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();openShareByKey('${order.key}','${order.month}')">공유</button>
-          <svg id="oarr-${order.key}" viewBox="0 0 20 20" fill="currentColor" style="width:16px;height:16px;color:var(--text3);flex-shrink:0;transition:transform .2s">
-            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-          </svg>
+        <div class="order-body" id="obody-${order.key}">
+          ${(order.items || []).map((item, idx) => `
+            <div class="order-item">
+              <button class="chk-btn ${item.received ? 'checked' : ''}" onclick="toggleReceived('${order.key}','${order.month}',${idx})">
+                ${item.received ? '<svg viewBox="0 0 20 20" fill="white" width="11" height="11"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : ''}
+              </button>
+              <span style="flex:1;${item.received ? 'text-decoration:line-through;color:var(--text3)' : ''}">${item.name}</span>
+              <span class="mono text-xs">${item.qty}${item.unit}</span>
+              <span class="mono text-xs text2">${commas(item.price)}원</span>
+            </div>`).join('')}
+          <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px">
+            <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal('${order.key}','${order.month}')">수정</button>
+            <button class="btn btn-danger btn-xs" onclick="deleteOrder('${order.key}','${order.month}')">삭제</button>
+          </div>
         </div>
+      </div>`;
+    }).join('');
+
+    // 날짜 포맷
+    const [y, m, d2] = date.split('-');
+    const dateObj = new Date(date);
+    const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
+    const dateLabel = `${parseInt(m)}/${parseInt(d2)} (${dayName})`;
+
+    return `<div class="date-group">
+      <div class="date-group-hdr open" id="${groupId}-hdr" onclick="toggleDateGroup('${groupId}')">
+        <span style="font-size:13px;font-weight:700;color:var(--cream);flex:1">${dateLabel}</span>
+        <span class="text-xs mono" style="color:var(--amber-light)">${dayOrders.length}건 · ${commas(dayTotal)}원</span>
+        ${dayPending > 0 ? `<span class="badge badge-amber" style="font-size:10px">입고대기 ${dayPending}</span>` : ''}
+        <svg id="${groupId}-arr" viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#888;flex-shrink:0;transition:transform .2s;transform:rotate(180deg)">
+          <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+        </svg>
       </div>
-      <div class="order-body" id="obody-${order.key}">
-        ${(order.items || []).map((item, idx) => `
-          <div class="order-item">
-            <button class="chk-btn ${item.received ? 'checked' : ''}" onclick="toggleReceived('${order.key}','${order.month}',${idx})">
-              ${item.received ? '<svg viewBox="0 0 20 20" fill="white" width="11" height="11"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : ''}
-            </button>
-            <span style="flex:1;${item.received ? 'text-decoration:line-through;color:var(--text3)' : ''}">${item.name}</span>
-            <span class="mono text-xs">${item.qty}${item.unit}</span>
-            <span class="mono text-xs text2">${commas(item.price)}원</span>
-          </div>`).join('')}
-        <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px">
-          <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal('${order.key}','${order.month}')">수정</button>
-          <button class="btn btn-danger btn-xs" onclick="deleteOrder('${order.key}','${order.month}')">삭제</button>
-        </div>
+      <div class="date-group-body open" id="${groupId}-body">
+        ${ordersHtml}
       </div>
     </div>`;
   }).join('');
 
-  // 지난발주 추가 버튼
   el.innerHTML += `<div style="padding:0 14px 8px">
     <button class="btn btn-ghost w-full" style="border-style:dashed;height:44px" onclick="openPastOrderModal()">+ 지난 발주 수동 입력</button>
   </div>`;
+}
+
+function toggleDateGroup(groupId) {
+  const body = document.getElementById(groupId + '-body');
+  const hdr = document.getElementById(groupId + '-hdr');
+  const arr = document.getElementById(groupId + '-arr');
+  const open = body.classList.toggle('open');
+  hdr.classList.toggle('open', open);
+  if (arr) arr.style.transform = open ? 'rotate(180deg)' : '';
 }
 
 function toggleOrderCard(key, month) {
