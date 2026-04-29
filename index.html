@@ -1068,6 +1068,7 @@ function renderHistory() {
         <span style="font-size:13px;font-weight:700;color:var(--cream);flex:1">${dateLabel}</span>
         <span class="text-xs mono" style="color:var(--amber-light)">${dayOrders.length}건 · ${commas(dayTotal)}원</span>
         ${dayPending > 0 ? `<span class="badge badge-amber" style="font-size:10px">입고대기 ${dayPending}</span>` : ''}
+        <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteDateGroup('${date}')" style="font-size:10px;padding:0 6px;height:20px;border-color:rgba(226,75,74,.5)">전체삭제</button>
         <svg id="${groupId}-arr" viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#888;flex-shrink:0;transition:transform .2s;transform:rotate(180deg)">
           <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
         </svg>
@@ -1107,6 +1108,18 @@ async function toggleReceived(key, month, idx) {
     await window._fn.update(dbRef(`orders/${month}/${key}/items/${idx}`), { received: newVal });
     showToast(newVal ? '입고 확인 ✓' : '입고 취소');
   } catch (e) { showToast('업데이트 실패'); }
+}
+
+async function deleteDateGroup(date) {
+  const orders = allOrders.filter(o => toDateStr(o.createdAt) === date);
+  if (!orders.length) return;
+  if (!confirm(`${date} 발주 ${orders.length}건을 모두 삭제할까요?`)) return;
+  try {
+    for (const o of orders) {
+      await window._fn.remove(dbRef(`orders/${o.month}/${o.key}`));
+    }
+    showToast(`${orders.length}건 삭제됨`);
+  } catch (e) { showToast('삭제 실패'); }
 }
 
 async function deleteOrder(key, month) {
