@@ -126,8 +126,15 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 .w-full{width:100%;}
 
 /* ── 발주입력 ── */
-.cat-scroll{display:flex;gap:6px;overflow-x:auto;padding:10px 14px;scrollbar-width:none;}
-.cat-scroll::-webkit-scrollbar{display:none;}
+.cat-scroll{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;}
+.cat-more-btn{flex-shrink:0;padding:6px 14px;border-radius:20px;font-size:13px;cursor:pointer;background:var(--amber-bg);color:var(--amber);border:0.5px solid var(--amber);font-family:inherit;}
+.cat-dropdown{position:relative;flex-shrink:0;}
+.cat-dropdown-menu{position:absolute;top:calc(100% + 4px);left:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r2);z-index:200;min-width:120px;box-shadow:0 4px 16px rgba(0,0,0,.15);display:none;}
+.cat-dropdown-menu.open{display:block;}
+.cat-dropdown-item{padding:10px 14px;font-size:13px;cursor:pointer;color:var(--text2);border-bottom:0.5px solid var(--border);}
+.cat-dropdown-item:last-child{border-bottom:none;}
+.cat-dropdown-item.active{color:var(--amber);font-weight:700;}
+.cat-dropdown-item:active{background:var(--bg3);}
 .cat-chip{flex-shrink:0;padding:6px 14px;border-radius:20px;font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);border:0.5px solid var(--border2);transition:all .15s;}
 .cat-chip.active{background:var(--dark);color:var(--cream);border-color:var(--dark);}
 
@@ -565,7 +572,24 @@ function loadAll() {
 
   // 카테고리별 전화번호
   onValue(dbRef('catPhones'), snap => {
-    catPhones = snap.val() || {};
+    const raw = snap.val() || {};
+    catPhones = {};
+    const migrateKeys = []; // 인코딩된 키 마이그레이션 목록
+    Object.entries(raw).forEach(([k, v]) => {
+      let decoded = k;
+      try { decoded = decodeURIComponent(k); } catch {}
+      catPhones[decoded] = v;
+      // 키가 인코딩된 형태면 마이그레이션 필요
+      if (decoded !== k) migrateKeys.push({ oldKey: k, newKey: decoded, val: v });
+    });
+    // 인코딩된 키를 한글 키로 자동 변환
+    if (migrateKeys.length > 0 && fbReady) {
+      migrateKeys.forEach(({ oldKey, newKey, val }) => {
+        window._fn.set(dbRef('catPhones/' + newKey), val).then(() => {
+          window._fn.remove(dbRef('catPhones/' + oldKey));
+        }).catch(() => {});
+      });
+    }
   });
 
   // 카탈로그
@@ -674,12 +698,49 @@ function switchTab(name, btn) {
 // ══════════════════════════════════════════
 function getCats() { return ['전체', ...new Set(CATALOG.map(i => i.cat))]; }
 
+const MAX_VISIBLE_CATS = 6; // 2줄에 보여줄 최대 개수
+
 function renderCats() {
   const el = document.getElementById('cat-scroll');
-  el.innerHTML = getCats().map(c =>
+  const cats = getCats();
+  const visible = cats.slice(0, MAX_VISIBLE_CATS);
+  const overflow = cats.slice(MAX_VISIBLE_CATS);
+  const activeInOverflow = overflow.includes(currentCat);
+
+  let html = visible.map(c =>
     `<div class="cat-chip ${c === currentCat ? 'active' : ''}" onclick="setCat('${c}')">${c}</div>`
   ).join('');
+
+  if (overflow.length > 0) {
+    html += `<div class="cat-dropdown" id="cat-dropdown">
+      <button class="cat-more-btn ${activeInOverflow ? 'active' : ''}" onclick="toggleCatDropdown(event)">
+        ${activeInOverflow ? currentCat : '더보기'} ▾
+      </button>
+      <div class="cat-dropdown-menu" id="cat-dropdown-menu">
+        ${overflow.map(c => `<div class="cat-dropdown-item ${c === currentCat ? 'active' : ''}" onclick="setCatFromDropdown('${c}')">${c}</div>`).join('')}
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
 }
+
+function toggleCatDropdown(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('cat-dropdown-menu');
+  if (menu) menu.classList.toggle('open');
+}
+
+function setCatFromDropdown(c) {
+  const menu = document.getElementById('cat-dropdown-menu');
+  if (menu) menu.classList.remove('open');
+  setCat(c);
+}
+
+// 외부 클릭시 드롭다운 닫기
+document.addEventListener('click', () => {
+  const menu = document.getElementById('cat-dropdown-menu');
+  if (menu) menu.classList.remove('open');
+});
 
 function setCat(c) { currentCat = c; renderCats(); renderItemList(); }
 
@@ -1217,7 +1278,7 @@ async function savePhone(cat) {
   const url = urlInp ? urlInp.value.trim() : '';
   catPhones[cat] = { phone, url };
   try {
-    await window._fn.set(dbRef('catPhones/' + encodeURIComponent(cat)), { phone, url });
+    await window._fn.set(dbRef('catPhones/' + cat.replace(/[.$#\[\]/]/g, '_')), { phone, url });
     showToast('저장됨 ✓');
   } catch { showToast('저장 실패'); }
 }
