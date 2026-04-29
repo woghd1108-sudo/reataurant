@@ -439,7 +439,10 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 4px
 
 <!-- 페이지: 발주입력 -->
 <div class="page active" id="page-order">
-  <div class="cat-scroll" id="cat-scroll"></div>
+  <div style="display:flex;align-items:center;gap:0">
+    <div class="cat-scroll" id="cat-scroll" style="flex:1"></div>
+    <button class="btn btn-ghost btn-sm" style="flex-shrink:0;margin-right:10px;font-size:11px" onclick="openCatalogModal()">⚙️관리</button>
+  </div>
   <div id="item-list" style="flex:1;overflow-y:auto"></div>
   <div id="order-summary-bar">
     <div style="flex:1">
@@ -597,15 +600,60 @@ label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 4px
   </div>
 </div>
 
+<!-- 품목 관리 모달 -->
+<div class="modal-overlay" id="catalog-modal" onclick="closeModal('catalog-modal',event)">
+  <div class="modal-box" style="max-height:90vh">
+    <div style="display:flex;align-items:center;margin-bottom:14px">
+      <div class="modal-title" style="margin-bottom:0;flex:1">📦 품목 관리</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModalById('catalog-modal')">닫기</button>
+    </div>
+    <!-- 카테고리 목록 -->
+    <div id="catalog-cat-list"></div>
+    <!-- 카테고리 추가 -->
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <input type="text" id="new-cat-name" placeholder="새 카테고리 이름" style="flex:1">
+      <button class="btn btn-primary btn-sm" onclick="addCategory()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 품목 추가 모달 -->
+<div class="modal-overlay" id="item-add-modal" onclick="closeModal('item-add-modal',event)">
+  <div class="modal-box">
+    <div class="modal-title" id="item-add-title">품목 추가</div>
+    <div style="margin-bottom:10px">
+      <label>품목명</label>
+      <input type="text" id="new-item-name" placeholder="예) 앞다리살">
+    </div>
+    <div style="margin-bottom:10px">
+      <label>단위</label>
+      <input type="text" id="new-item-unit" placeholder="예) kg, 개, 박스, 단">
+    </div>
+    <div style="margin-bottom:10px">
+      <label>기본 단가 (원)</label>
+      <input type="number" id="new-item-price" inputmode="numeric" placeholder="예) 8500">
+    </div>
+    <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px">
+      <label style="margin:0">육류 (0.5단위)</label>
+      <div class="switch" id="new-item-meat-switch" onclick="toggleMeatSwitch()">
+        <div class="switch-knob"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="saveNewItem()">저장</button>
+      <button class="btn btn-ghost" onclick="closeModalById('item-add-modal')">취소</button>
+    </div>
+  </div>
+</div>
+
 <!-- 토스트 -->
 <div id="toast"></div>
 
 <script>
 // ══════════════════════════════════════════
-// 마스터 데이터 - 품목 카탈로그
+// 마스터 데이터 - Firebase에서 로드 (동적)
 // ══════════════════════════════════════════
-const CATALOG = [
-  // 돼지고기
+const DEFAULT_CATALOG = [
   { id:'p001', cat:'돼지고기', name:'앞다리살', unit:'kg', isMeat:true, defaultPrice:8500 },
   { id:'p002', cat:'돼지고기', name:'뒷다리살', unit:'kg', isMeat:true, defaultPrice:7500 },
   { id:'p003', cat:'돼지고기', name:'삼겹살', unit:'kg', isMeat:true, defaultPrice:18000 },
@@ -613,7 +661,6 @@ const CATALOG = [
   { id:'p005', cat:'돼지고기', name:'내장(소창)', unit:'kg', isMeat:true, defaultPrice:5000 },
   { id:'p006', cat:'돼지고기', name:'내장(대창)', unit:'kg', isMeat:true, defaultPrice:4500 },
   { id:'p007', cat:'돼지고기', name:'수육용 고기', unit:'kg', isMeat:true, defaultPrice:9000 },
-  // 채소
   { id:'v001', cat:'채소', name:'대파', unit:'단', isMeat:false, defaultPrice:2000 },
   { id:'v002', cat:'채소', name:'양파', unit:'망', isMeat:false, defaultPrice:12000 },
   { id:'v003', cat:'채소', name:'마늘', unit:'kg', isMeat:false, defaultPrice:8000 },
@@ -621,7 +668,6 @@ const CATALOG = [
   { id:'v005', cat:'채소', name:'무', unit:'개', isMeat:false, defaultPrice:2000 },
   { id:'v006', cat:'채소', name:'부추', unit:'단', isMeat:false, defaultPrice:2500 },
   { id:'v007', cat:'채소', name:'고추', unit:'kg', isMeat:false, defaultPrice:12000 },
-  // 양념
   { id:'s001', cat:'양념', name:'된장', unit:'kg', isMeat:false, defaultPrice:4500 },
   { id:'s002', cat:'양념', name:'고추가루', unit:'kg', isMeat:false, defaultPrice:15000 },
   { id:'s003', cat:'양념', name:'참기름', unit:'L', isMeat:false, defaultPrice:25000 },
@@ -629,19 +675,18 @@ const CATALOG = [
   { id:'s005', cat:'양념', name:'소금', unit:'kg', isMeat:false, defaultPrice:1500 },
   { id:'s006', cat:'양념', name:'설탕', unit:'kg', isMeat:false, defaultPrice:2000 },
   { id:'s007', cat:'양념', name:'새우젓', unit:'kg', isMeat:false, defaultPrice:12000 },
-  // 주류/음료
   { id:'d001', cat:'주류', name:'소주(처음처럼)', unit:'박스', isMeat:false, defaultPrice:28000 },
   { id:'d002', cat:'주류', name:'소주(참이슬)', unit:'박스', isMeat:false, defaultPrice:28000 },
   { id:'d003', cat:'주류', name:'맥주(카스)', unit:'박스', isMeat:false, defaultPrice:35000 },
   { id:'d004', cat:'주류', name:'막걸리', unit:'박스', isMeat:false, defaultPrice:24000 },
-  // 기타
   { id:'e001', cat:'기타', name:'밥(즉석)', unit:'개', isMeat:false, defaultPrice:1500 },
   { id:'e002', cat:'기타', name:'김치', unit:'kg', isMeat:false, defaultPrice:8000 },
   { id:'e003', cat:'기타', name:'계란', unit:'판', isMeat:false, defaultPrice:7000 },
   { id:'e004', cat:'기타', name:'두부', unit:'모', isMeat:false, defaultPrice:2000 },
   { id:'e005', cat:'기타', name:'당면', unit:'kg', isMeat:false, defaultPrice:5000 },
 ];
-const CATS = ['전체', ...new Set(CATALOG.map(i=>i.cat))];
+let CATALOG = [...DEFAULT_CATALOG];
+let CATS = ['전체', ...new Set(CATALOG.map(i=>i.cat))];
 
 // ══════════════════════════════════════════
 // 상태
@@ -671,10 +716,44 @@ window.addEventListener('firebase-ready', () => {
 function getDb() { return window._db; }
 function dbRef(path) { return window._dbFns.ref(getDb(), path); }
 
+function rebuildCatalog(data) {
+  if (data && Object.keys(data).length > 0) {
+    CATALOG = Object.entries(data).map(([id, v]) => ({ id, ...v }));
+    const catOrder = [...new Set(DEFAULT_CATALOG.map(i=>i.cat))];
+    CATALOG.sort((a,b) => {
+      const ai = catOrder.indexOf(a.cat); const bi = catOrder.indexOf(b.cat);
+      if (ai !== bi) return (ai===-1?999:ai) - (bi===-1?999:bi);
+      return a.name.localeCompare(b.name, 'ko');
+    });
+  } else {
+    CATALOG = [...DEFAULT_CATALOG];
+    // 최초 실행 시 기본 카탈로그 Firebase에 저장
+    if (firebaseReady) {
+      const { set } = window._dbFns;
+      DEFAULT_CATALOG.forEach(item => {
+        const { id, ...data } = item;
+        set(dbRef('catalog/' + id), data).catch(()=>{});
+      });
+    }
+  }
+  CATS = ['전체', ...new Set(CATALOG.map(i=>i.cat))];
+  renderCats();
+  renderItemList();
+}
+
 async function loadData() {
   try {
-    // 발주 내역
     const { onValue, ref } = window._dbFns;
+
+    // 카탈로그 로드
+    onValue(ref(getDb(), 'catalog'), snap => {
+      rebuildCatalog(snap.val());
+      CATALOG.forEach(item => {
+        if (!currentPrices[item.id]) currentPrices[item.id] = item.defaultPrice;
+      });
+    });
+
+    // 발주 내역
     onValue(ref(getDb(), 'orders'), snap => {
       allOrders = [];
       snap.forEach(child => {
@@ -1257,6 +1336,121 @@ function npConfirm() {
 }
 
 // ══════════════════════════════════════════
+// ══════════════════════════════════════════
+// 카탈로그(품목) 관리
+// ══════════════════════════════════════════
+let newItemMeat = false;
+let newItemCat = '';
+
+function openCatalogModal() {
+  renderCatalogModal();
+  openModalById('catalog-modal');
+}
+
+function renderCatalogModal() {
+  const cats = [...new Set(CATALOG.map(i=>i.cat))];
+  const el = document.getElementById('catalog-cat-list');
+  if (!cats.length) { el.innerHTML = '<div class="text-xs text3" style="padding:8px">카테고리 없음</div>'; return; }
+  el.innerHTML = cats.map(cat => {
+    const items = CATALOG.filter(i=>i.cat===cat);
+    return `
+      <div class="card" style="margin-bottom:8px">
+        <div style="display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)">
+          <span style="flex:1;font-weight:700;font-size:13px">${cat}</span>
+          <button class="btn btn-primary btn-xs" onclick="openItemAddModal('${escAttr(cat)}')">+ 품목</button>
+          <button class="btn btn-ghost btn-xs" style="color:var(--danger);margin-left:4px" onclick="deleteCategory('${escAttr(cat)}')">삭제</button>
+        </div>
+        ${items.map(item => `
+          <div style="display:flex;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border);gap:8px">
+            <span style="flex:1;font-size:12px">${item.name} <span class="text3 text-xs">${item.unit}</span></span>
+            <span class="mono text-xs text2">${commas(item.defaultPrice)}원</span>
+            ${item.isMeat ? '<span class="badge badge-blue" style="font-size:9px">육류</span>' : ''}
+            <button class="btn btn-ghost btn-xs" style="color:var(--danger)" onclick="deleteItem('${item.id}')">삭제</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }).join('');
+}
+
+function escAttr(s) { return s.replace(/'/g, "\'"); }
+
+function openItemAddModal(cat) {
+  newItemCat = cat;
+  newItemMeat = false;
+  document.getElementById('item-add-title').textContent = `품목 추가 - ${cat}`;
+  document.getElementById('new-item-name').value = '';
+  document.getElementById('new-item-unit').value = '';
+  document.getElementById('new-item-price').value = '';
+  document.getElementById('new-item-meat-switch').classList.remove('on');
+  openModalById('item-add-modal');
+}
+
+function toggleMeatSwitch() {
+  newItemMeat = !newItemMeat;
+  document.getElementById('new-item-meat-switch').classList.toggle('on', newItemMeat);
+}
+
+async function addCategory() {
+  const name = document.getElementById('new-cat-name').value.trim();
+  if (!name) { showToast('카테고리 이름을 입력하세요'); return; }
+  if (CATS.includes(name)) { showToast('이미 존재하는 카테고리예요'); return; }
+  // 빈 placeholder 품목 없이 카테고리만 추가는 안되니까 안내
+  showToast('카테고리 추가 후 품목을 추가해주세요');
+  document.getElementById('new-cat-name').value = '';
+  // 카테고리명만 저장 (더미 없이 품목 추가 모달 바로 열기)
+  newItemCat = name;
+  newItemMeat = false;
+  document.getElementById('item-add-title').textContent = `품목 추가 - ${name} (새 카테고리)`;
+  document.getElementById('new-item-name').value = '';
+  document.getElementById('new-item-unit').value = '';
+  document.getElementById('new-item-price').value = '';
+  document.getElementById('new-item-meat-switch').classList.remove('on');
+  openModalById('item-add-modal');
+}
+
+async function saveNewItem() {
+  const name = document.getElementById('new-item-name').value.trim();
+  const unit = document.getElementById('new-item-unit').value.trim();
+  const price = parseInt(document.getElementById('new-item-price').value) || 0;
+  if (!name) { showToast('품목명을 입력하세요'); return; }
+  if (!unit) { showToast('단위를 입력하세요'); return; }
+  const id = 'c' + Date.now().toString(36);
+  const item = { cat: newItemCat, name, unit, isMeat: newItemMeat, defaultPrice: price };
+  const { set } = window._dbFns;
+  try {
+    await set(dbRef('catalog/' + id), item);
+    closeModalById('item-add-modal');
+    showToast(`${name} 추가됨 ✓`);
+    renderCatalogModal();
+  } catch(e) { showToast('저장 실패: ' + e.message); }
+}
+
+async function deleteItem(id) {
+  const item = CATALOG.find(i=>i.id===id);
+  if (!item) return;
+  if (!confirm(`'${item.name}' 품목을 삭제할까요?`)) return;
+  const { remove } = window._dbFns;
+  try {
+    await remove(dbRef('catalog/' + id));
+    showToast('삭제됨');
+    renderCatalogModal();
+  } catch(e) { showToast('삭제 실패'); }
+}
+
+async function deleteCategory(cat) {
+  const items = CATALOG.filter(i=>i.cat===cat);
+  if (!confirm(`'${cat}' 카테고리와 품목 ${items.length}개를 모두 삭제할까요?`)) return;
+  const { remove } = window._dbFns;
+  try {
+    for (const item of items) {
+      await remove(dbRef('catalog/' + item.id));
+    }
+    showToast(`${cat} 삭제됨`);
+    renderCatalogModal();
+  } catch(e) { showToast('삭제 실패'); }
+}
+
 // 모달 헬퍼
 // ══════════════════════════════════════════
 function openModalById(id) { document.getElementById(id).classList.add('open'); }
