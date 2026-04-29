@@ -639,18 +639,25 @@ function loadAll() {
     renderItemList();
   });
 
-  // 발주 내역 - 구버전(orders/키) + 신버전(orders/월/키) 둘 다 읽기
+  // 발주 내역 - orders 전체 구독 (구버전/신버전 모두 처리)
   const now = new Date();
 
-  // 구버전 데이터 (orders 바로 아래)
   onValue(dbRef('orders'), snap => {
-    // 월별 하위 노드가 아닌 직접 발주 데이터만 처리
-    allOrders = allOrders.filter(o => o._isNew); // 신버전만 남기고
+    allOrders = [];
     snap.forEach(child => {
       const val = child.val();
-      // 월별 구조면 건너뜀 (값이 객체이고 createdAt이 없으면 월 노드)
-      if (val && val.createdAt) {
-        allOrders.push({ key: child.key, month: monthKey(val.createdAt), _isNew: false, ...val });
+      if (!val) return;
+      // 구버전: createdAt이 바로 있는 경우
+      if (val.createdAt) {
+        allOrders.push({ key: child.key, month: monthKey(val.createdAt), ...val });
+      }
+      // 신버전: 월별 노드 안에 발주들이 있는 경우 (예: 2026-04)
+      else if (typeof val === 'object') {
+        Object.entries(val).forEach(([subKey, subVal]) => {
+          if (subVal && subVal.createdAt) {
+            allOrders.push({ key: subKey, month: child.key, ...subVal });
+          }
+        });
       }
     });
     allOrders.sort((a, b) => b.createdAt - a.createdAt);
@@ -658,26 +665,6 @@ function loadAll() {
     if (document.getElementById('page-history').classList.contains('active')) renderHistory();
     if (document.getElementById('page-stats').classList.contains('active')) renderStats();
   });
-
-  // 신버전 데이터 (orders/월/키)
-  for (let i = 0; i < 3; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const ym = monthKey(d.getTime());
-    onValue(dbRef('orders/' + ym), snap => {
-      // 신버전 데이터 교체
-      allOrders = allOrders.filter(o => !(o._isNew && o.month === ym));
-      snap.forEach(child => {
-        const val = child.val();
-        if (val && val.createdAt) {
-          allOrders.push({ key: child.key, month: ym, _isNew: true, ...val });
-        }
-      });
-      allOrders.sort((a, b) => b.createdAt - a.createdAt);
-      updateHeader();
-      if (document.getElementById('page-history').classList.contains('active')) renderHistory();
-      if (document.getElementById('page-stats').classList.contains('active')) renderStats();
-    });
-  }
 
   // 가격 이력
   onValue(dbRef('priceHistory'), snap => {
