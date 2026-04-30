@@ -1167,8 +1167,12 @@ function toggleOrderCard(key, month) {
 let receiveTarget = null; // {key, month, idx, item}
 
 // 인라인 입고확인 함수들
+function safeId(key, idx) {
+  return (key + '-' + idx).replace(/[^a-zA-Z0-9-_]/g, '_');
+}
+
 function adjustInlinePrice(key, month, idx, delta) {
-  const el = document.getElementById('rprice-' + key + '-' + idx);
+  const el = document.getElementById('rprice-' + safeId(key, idx));
   if (!el) return;
   el.value = Math.max(0, (parseInt(el.value) || 0) + delta);
 }
@@ -1179,8 +1183,8 @@ async function toggleInlineReceive(key, month, idx) {
   const item = order.items[idx];
   if (!item) return;
 
-  const qtyEl = document.getElementById('rqty-' + key + '-' + idx);
-  const priceEl = document.getElementById('rprice-' + key + '-' + idx);
+  const qtyEl = document.getElementById('rqty-' + safeId(key, idx));
+  const priceEl = document.getElementById('rprice-' + safeId(key, idx));
   const qtyVal = parseFloat(qtyEl ? qtyEl.value : item.qty) || item.qty;
   const priceVal = parseInt(priceEl ? priceEl.value : item.price) || item.price;
 
