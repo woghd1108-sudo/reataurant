@@ -1073,33 +1073,47 @@ function renderHistory() {
         : '';
 
     // 카테고리별 품목 목록 (접힌 상태에서 보이는 요약)
-    const catSummary = Object.entries(catMap).map(([cat, items]) => {
+    // 그날 전체 품목을 카테고리별 세로 목록으로 표시
+    const allItems = Object.entries(catMap).map(([cat, items]) => ({ cat, items }));
+    const catSummary = allItems.map(({ cat, items }) => {
       const catTotal = items.reduce((s, i) => {
         const qty = i.actualQty != null ? i.actualQty : i.qty;
         const price = i.actualPrice != null ? i.actualPrice : i.price;
         return s + qty * price;
       }, 0);
-      return `<div style="padding:9px 12px;border-bottom:0.5px solid var(--border);background:var(--bg2)">
-        <div class="flex items-center gap8" style="margin-bottom:5px">
-          <span style="font-size:12px;font-weight:700;color:var(--amber);min-width:60px">${cat}</span>
-          <span class="mono text-xs text2">${commas(catTotal)}원</span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">
-          ${items.map(item => {
-            const actualQty = item.actualQty != null ? item.actualQty : item.qty;
-            const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
-            const hasActual = item.actualQty != null || item.actualPrice != null;
-            return `<div style="display:flex;align-items:center;gap:4px;background:${item.received ? 'var(--bg3)' : 'var(--bg2)'};border:0.5px solid ${item.received ? 'var(--green)' : 'var(--border)'};border-radius:6px;padding:4px 8px;cursor:pointer"
-              onclick="openReceiveModal('${item.orderKey}','${item.orderMonth}',${item.itemIdx})">
-              <span style="font-size:12px;${item.received ? 'text-decoration:line-through;color:var(--text3)' : ''}">${item.name}</span>
-              <span class="mono text-xs" style="color:${hasActual ? 'var(--amber)' : 'var(--text3)'}">
-                ${actualQty}${item.unit}${hasActual && item.actualPrice != null ? ' · ' + commas(actualPrice) + '원' : ''}
-              </span>
-              ${item.received ? '<svg viewBox="0 0 20 20" fill="currentColor" style="width:10px;height:10px;color:var(--green)"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : ''}
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
+      const itemRows = items.map(item => {
+        const actualQty = item.actualQty != null ? item.actualQty : item.qty;
+        const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
+        const rcvd = item.received;
+        const okey = item.orderKey;
+        const omonth = item.orderMonth;
+        const oidx = item.itemIdx;
+        const bgStyle = rcvd ? 'background:var(--bg4)' : '';
+        const inputBg = rcvd ? 'background:var(--bg4)' : '';
+        return '<div style="display:grid;grid-template-columns:1fr auto auto auto auto;align-items:center;gap:6px;padding:7px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'var(--bg3)' : 'var(--bg2)') + '">' +
+          '<div>' +
+            '<span style="font-size:13px;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + item.name + '</span>' +
+            (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);margin-left:4px">' + item.receivedDateStr.slice(5).replace('-','/') + '입고</span>' : '') +
+          '</div>' +
+          '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:52px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rqty-' + okey + '-' + oidx + '">' +
+          '<span class="text-xs text3">' + item.unit + '</span>' +
+          '<div style="display:flex;align-items:center;gap:3px">' +
+            '<button class="btn btn-ghost btn-xs" style="width:32px;padding:0" onclick="adjustInlinePrice(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ',-500)">−</button>' +
+            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="width:72px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rprice-' + okey + '-' + oidx + '">' +
+            '<button class="btn btn-ghost btn-xs" style="width:32px;padding:0;color:var(--amber)" onclick="adjustInlinePrice(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ',500)">+</button>' +
+          '</div>' +
+          '<button style="width:28px;height:28px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="toggleInlineReceive(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ')">' +
+            (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="12" height="12"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
+          '</button>' +
+        '</div>';
+      }).join('');
+      return '<div style="border-bottom:0.5px solid var(--border)">' +
+        '<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--bg3)">' +
+          '<span style="font-size:12px;font-weight:700;color:var(--amber);flex:1">' + cat + '</span>' +
+          '<span class="mono text-xs text2">' + commas(catTotal) + '원</span>' +
+        '</div>' +
+        itemRows +
+      '</div>';
     }).join('');
 
     // 날짜 포맷
@@ -1152,6 +1166,52 @@ function toggleOrderCard(key, month) {
 
 let receiveTarget = null; // {key, month, idx, item}
 
+// 인라인 입고확인 함수들
+function adjustInlinePrice(key, month, idx, delta) {
+  const el = document.getElementById('rprice-' + key + '-' + idx);
+  if (!el) return;
+  el.value = Math.max(0, (parseInt(el.value) || 0) + delta);
+}
+
+async function toggleInlineReceive(key, month, idx) {
+  const order = allOrders.find(o => o.key === key && o.month === month);
+  if (!order) return;
+  const item = order.items[idx];
+  if (!item) return;
+
+  const qtyEl = document.getElementById('rqty-' + key + '-' + idx);
+  const priceEl = document.getElementById('rprice-' + key + '-' + idx);
+  const qtyVal = parseFloat(qtyEl ? qtyEl.value : item.qty) || item.qty;
+  const priceVal = parseInt(priceEl ? priceEl.value : item.price) || item.price;
+
+  const newReceived = !item.received;
+  const updates = { received: newReceived };
+  if (newReceived) {
+    updates.actualQty = qtyVal;
+    updates.actualPrice = priceVal;
+    updates.receivedAt = Date.now();
+    updates.receivedDateStr = toDateStr(Date.now());
+  } else {
+    updates.actualQty = null;
+    updates.actualPrice = null;
+    updates.receivedAt = null;
+    updates.receivedDateStr = null;
+  }
+
+  try {
+    await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), updates);
+    if (newReceived && priceVal !== item.price) {
+      await recordPrice(item.id || '', priceVal, '실입고 단가');
+      currentPrices[item.id] = priceVal;
+    }
+    showToast(newReceived ? '입고 완료 ✓' : '입고 취소');
+  } catch (e) { showToast('업데이트 실패'); }
+}
+
+async function updateInlineReceive(key, month, idx) {
+  // 값 변경 시 자동 저장은 안 하고 체크버튼 누를 때 저장
+}
+
 function openReceiveModal(key, month, idx) {
   const order = allOrders.find(o => o.key === key && o.month === month);
   if (!order) return;
@@ -1190,7 +1250,9 @@ async function confirmReceive() {
   const updates = {
     received: true,
     actualQty: qtyVal,
-    actualPrice: priceVal
+    actualPrice: priceVal,
+    receivedAt: Date.now(),
+    receivedDateStr: toDateStr(Date.now())
   };
 
   try {
