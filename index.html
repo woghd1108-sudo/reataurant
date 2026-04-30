@@ -278,7 +278,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.9</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.11</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -540,6 +540,7 @@ let catPhones = {};        // {카테고리: 전화번호}
 let currentQty = {};       // {id: qty}
 let currentPrices = {};    // {id: price}
 let currentCat = '전체';
+let catOrderList = []; // 카테고리 순서 (Firebase에서 로드)
 let histDays = 7;
 let statsPeriod = 'month';
 let priceMonths = 3;
@@ -636,6 +637,13 @@ function loadAll() {
         }).catch(() => {});
       });
     }
+  });
+
+  // 카테고리 순서
+  onValue(dbRef('catOrder'), snap => {
+    catOrderList = snap.val() || [];
+    renderCats();
+    renderItemList();
   });
 
   // 카탈로그
@@ -1396,6 +1404,12 @@ function openShareByKey(key, month) {
 // ══════════════════════════════════════════
 // 통계 탭
 // ══════════════════════════════════════════
+function toggleStatsCat(cat) {
+  if (statsOpenCats.has(cat)) statsOpenCats.delete(cat);
+  else statsOpenCats.add(cat);
+  renderStats();
+}
+
 function setStatsFilter(el, period) {
   document.querySelectorAll('#stats-filter .filter-chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
@@ -1403,6 +1417,8 @@ function setStatsFilter(el, period) {
   document.getElementById('stats-date-range').style.display = period === 'custom' ? 'flex' : 'none';
   if (period !== 'custom') renderStats();
 }
+
+let statsOpenCats = new Set(); // 펼쳐진 카테고리
 
 function renderStats() {
   const el = document.getElementById('stats-content');
@@ -1424,16 +1440,18 @@ function renderStats() {
   const itemMap = {}, catMap = {};
   filtered.forEach(order => {
     (order.items || []).forEach(item => {
-      // 실입고 수량/단가 우선 반영
       const qty = item.actualQty != null ? item.actualQty : item.qty;
       const price = item.actualPrice != null ? item.actualPrice : item.price;
       const sub = qty * price;
       totalAmt += sub;
-      if (!itemMap[item.name]) itemMap[item.name] = { amt: 0, qty: 0, unit: item.unit };
+      if (!itemMap[item.name]) itemMap[item.name] = { amt: 0, qty: 0, unit: item.unit, cat: item.cat };
       itemMap[item.name].amt += sub;
       itemMap[item.name].qty += qty;
-      if (!catMap[item.cat]) catMap[item.cat] = { amt: 0 };
+      if (!catMap[item.cat]) catMap[item.cat] = { amt: 0, items: {} };
       catMap[item.cat].amt += sub;
+      if (!catMap[item.cat].items[item.name]) catMap[item.cat].items[item.name] = { amt: 0, qty: 0, unit: item.unit };
+      catMap[item.cat].items[item.name].amt += sub;
+      catMap[item.cat].items[item.name].qty += qty;
     });
   });
   const ranked = Object.entries(itemMap).sort((a, b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
@@ -1445,6 +1463,47 @@ function renderStats() {
   });
   const mKeys = Object.keys(months);
   const mMax = Math.max(...Object.values(months).map(Math.abs), 1);
+
+  // 카테고리 섹션 렌더링
+  const catSec = document.getElementById('stats-cat-section');
+  if (catSec) {
+    const catSorted = Object.entries(catMap).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
+    catSec.innerHTML = catSorted.length === 0 ? '<div class="empty-state" style="padding:24px">데이터 없음</div>' :
+      catSorted.map(function(catEntry) {
+        const cat = catEntry[0], data = catEntry[1];
+        const pct = Math.round(Math.abs(data.amt) / Math.max(Math.abs(totalAmt), 1) * 100);
+        const isOpen = statsOpenCats.has(cat);
+        const itemsSorted = Object.entries(data.items).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
+        const catMaxAmt = Math.max.apply(null, itemsSorted.map(function(e) { return Math.abs(e[1].amt); }).concat([1]));
+        return '<div>' +
+          '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border)" onclick="toggleStatsCat(' + JSON.stringify(cat) + ')">' +
+            '<div style="flex:1">' +
+              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+                '<span style="font-size:13px;font-weight:700;color:var(--amber)">' + cat + '</span>' +
+                '<span style="font-size:11px;color:var(--text3)">' + pct + '%</span>' +
+              '</div>' +
+              '<div class="bar-wrap"><div class="bar-fill accent" style="width:' + pct + '%"></div></div>' +
+            '</div>' +
+            '<span style="font-size:13px;font-family:monospace;color:var(--text2);white-space:nowrap">' + commas(data.amt) + '원</span>' +
+            '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:var(--text3);flex-shrink:0;transition:transform .2s;transform:' + (isOpen ? 'rotate(180deg)' : '') + '">' +
+              '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>' +
+            '</svg>' +
+          '</div>' +
+          (isOpen ? '<div>' + itemsSorted.map(function(iEntry) {
+            const name = iEntry[0], idata = iEntry[1];
+            const ipct = Math.round(Math.abs(idata.amt) / catMaxAmt * 100);
+            const isNeg = idata.amt < 0;
+            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px 8px 20px;border-bottom:0.5px solid var(--border)">' +
+              '<div style="flex:1">' +
+                '<div style="font-size:12px;margin-bottom:3px">' + name + ' <span style="font-size:11px;color:var(--text3)">' + idata.qty.toFixed(1) + idata.unit + '</span></div>' +
+                '<div class="bar-wrap"><div class="bar-fill" style="width:' + ipct + '%;' + (isNeg ? 'background:var(--green)' : '') + '"></div></div>' +
+              '</div>' +
+              '<span style="font-size:12px;font-family:monospace;color:' + (isNeg ? 'var(--green)' : 'var(--text2)') + ';white-space:nowrap">' + commas(idata.amt) + '원</span>' +
+            '</div>';
+          }).join('') + '</div>' : '') +
+        '</div>';
+      }).join('');
+  }
 
   el.innerHTML = `
     <div class="stat-grid">
@@ -1459,6 +1518,47 @@ function renderStats() {
         <div class="bar-wrap" style="flex:1"><div class="bar-fill ${months[m] === Math.max(...Object.values(months)) ? 'accent' : ''}" style="width:${Math.round(Math.abs(months[m]) / mMax * 100)}%"><span class="bar-text">${months[m] > 0 ? commas(months[m]) + '원' : ''}</span></div></div>
       </div>`).join('')}
     </div>` : ''}
+    <div class="sec-hdr">카테고리별</div>
+    <div class="card" style="margin:0 14px 8px">
+      ${Object.entries(catMap).length === 0 ? '<div class="empty-state" style="padding:24px">데이터 없음</div>' :
+        Object.entries(catMap).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt)).map(([cat, data]) => {
+          const pct = Math.round(Math.abs(data.amt) / Math.max(Math.abs(totalAmt), 1) * 100);
+          const isOpen = statsOpenCats.has(cat);
+          const itemsSorted = Object.entries(data.items).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
+          const catMaxAmt = Math.max(...itemsSorted.map(([,d]) => Math.abs(d.amt)), 1);
+          return '<div>' +
+            '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border)" onclick="toggleStatsCat(' + JSON.stringify(cat) + ')">' +
+              '<div style="flex:1">' +
+                '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+                  '<span style="font-size:13px;font-weight:700;color:var(--amber)">' + cat + '</span>' +
+                  '<span style="font-size:11px;color:var(--text3)">' + pct + '%</span>' +
+                '</div>' +
+                '<div class="bar-wrap"><div class="bar-fill accent" style="width:' + pct + '%"></div></div>' +
+              '</div>' +
+              '<span style="font-size:13px;font-family:monospace;color:var(--text2);white-space:nowrap">' + commas(data.amt) + '원</span>' +
+              '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:var(--text3);flex-shrink:0;transition:transform .2s;transform:' + (isOpen ? 'rotate(180deg)' : '') + '">' +
+                '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>' +
+              '</svg>' +
+            '</div>' +
+            (isOpen ? '<div>' +
+              itemsSorted.map(([name, idata]) => {
+                const ipct = Math.round(Math.abs(idata.amt) / catMaxAmt * 100);
+                const isNeg = idata.amt < 0;
+                return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px 8px 20px;border-bottom:0.5px solid var(--border)">' +
+                  '<div style="flex:1">' +
+                    '<div style="font-size:12px;margin-bottom:3px">' + name + ' <span style="font-size:11px;color:var(--text3)">' + idata.qty.toFixed(1) + idata.unit + '</span></div>' +
+                    '<div class="bar-wrap"><div class="bar-fill" style="width:' + ipct + '%;' + (isNeg ? 'background:var(--green)' : '') + '"></div></div>' +
+                  '</div>' +
+                  '<span style="font-size:12px;font-family:monospace;color:' + (isNeg ? 'var(--green)' : 'var(--text2)') + ';white-space:nowrap">' + commas(idata.amt) + '원</span>' +
+                '</div>';
+              }).join('') +
+            '</div>' : '') +
+          '</div>';
+        }).join('')
+      }
+    </div>
+    <div class="sec-hdr">카테고리별</div>
+    <div class="card" style="margin:0 14px 8px" id="stats-cat-section"></div>
     <div class="sec-hdr">품목별 순위</div>
     <div class="card" style="margin:0 14px">
       ${ranked.length === 0 ? '<div class="empty-state" style="padding:24px">데이터 없음</div>' :
@@ -1580,15 +1680,23 @@ function openCatalogModal() {
 }
 
 function renderCatalogContent() {
-  const cats = [...new Set(CATALOG.map(i => i.cat))];
+  // catOrderList 기준으로 정렬, 없는 카테고리는 뒤에
+  const allCats = [...new Set(CATALOG.map(i => i.cat))];
+  const cats = catOrderList.length > 0
+    ? [...catOrderList.filter(c => allCats.includes(c)), ...allCats.filter(c => !catOrderList.includes(c))]
+    : allCats;
   const el = document.getElementById('catalog-content');
-  el.innerHTML = cats.map(cat => {
+  el.innerHTML = cats.map((cat, idx) => {
     const items = CATALOG.filter(i => i.cat === cat);
     const catContact = catPhones[cat] || {};
     const phone = typeof catContact === 'string' ? catContact : (catContact.phone || '');
     const url = typeof catContact === 'object' ? (catContact.url || '') : '';
     return `<div class="cat-manage-row">
       <div class="flex items-center gap8" style="margin-bottom:8px">
+        <div style="display:flex;flex-direction:column;gap:2px;margin-right:4px">
+          <button class="btn btn-ghost btn-xs" style="height:18px;padding:0 6px;font-size:10px" onclick="moveCat(${idx},-1)" ${idx===0?'disabled':''}>▲</button>
+          <button class="btn btn-ghost btn-xs" style="height:18px;padding:0 6px;font-size:10px" onclick="moveCat(${idx},1)" ${idx===cats.length-1?'disabled':''}>▼</button>
+        </div>
         <span style="font-size:14px;font-weight:700;flex:1">${cat}</span>
         <button class="btn btn-amber btn-xs" onclick="openItemAddModal('${escAttr(cat)}')">+ 품목</button>
         <button class="btn btn-danger btn-xs" onclick="deleteCat('${escAttr(cat)}')">삭제</button>
@@ -1613,6 +1721,23 @@ function renderCatalogContent() {
       </div>
     </div>`;
   }).join('');
+}
+
+async function moveCat(idx, dir) {
+  const allCats = [...new Set(CATALOG.map(i => i.cat))];
+  const cats = catOrderList.length > 0
+    ? [...catOrderList.filter(c => allCats.includes(c)), ...allCats.filter(c => !catOrderList.includes(c))]
+    : [...allCats];
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= cats.length) return;
+  const tmp = cats[idx]; cats[idx] = cats[newIdx]; cats[newIdx] = tmp;
+  catOrderList = cats;
+  try {
+    await window._fn.set(dbRef('catOrder'), cats);
+    renderCatalogContent();
+    renderCats();
+    renderItemList();
+  } catch(e) { showToast('저장 실패'); }
 }
 
 function escAttr(s) { return s.replace(/'/g, "\\'"); }
