@@ -1088,23 +1088,26 @@ function renderHistory() {
         const okey = item.orderKey;
         const omonth = item.orderMonth;
         const oidx = item.itemIdx;
-        const bgStyle = rcvd ? 'background:var(--bg4)' : '';
-        const inputBg = rcvd ? 'background:var(--bg4)' : '';
-        return '<div style="display:grid;grid-template-columns:1fr auto auto auto auto;align-items:center;gap:6px;padding:7px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'var(--bg3)' : 'var(--bg2)') + '">' +
-          '<div>' +
-            '<span style="font-size:13px;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + item.name + '</span>' +
-            (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);margin-left:4px">' + item.receivedDateStr.slice(5).replace('-','/') + '입고</span>' : '') +
+        const sid = safeId(okey, oidx);
+        const okeyJson = JSON.stringify(okey);
+        const omonthJson = JSON.stringify(omonth);
+        return '<div style="padding:8px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'var(--bg3)' : 'var(--bg2)') + '">' +
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+            '<span style="font-size:13px;font-weight:500;flex:1;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + item.name + '</span>' +
+            (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green)">' + item.receivedDateStr.slice(5).replace('-','/') + '입고</span>' : '') +
+            '<button style="width:26px;height:26px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="toggleInlineReceive(' + okeyJson + ',' + omonthJson + ',' + oidx + ')">' +
+              (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="12" height="12"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
+            '</button>' +
           '</div>' +
-          '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:52px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rqty-' + safeId(okey, oidx) + '">' +
-          '<span class="text-xs text3">' + item.unit + '</span>' +
-          '<div style="display:flex;align-items:center;gap:3px">' +
-            '<button class="btn btn-ghost btn-xs" style="width:32px;padding:0" onclick="adjustInlinePrice(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ',-500)">−</button>' +
-            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="width:72px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rprice-' + safeId(okey, oidx) + '">' +
-            '<button class="btn btn-ghost btn-xs" style="width:32px;padding:0;color:var(--amber)" onclick="adjustInlinePrice(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ',500)">+</button>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<span style="font-size:11px;color:var(--text3);white-space:nowrap">수량</span>' +
+            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:60px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px" id="rqty-' + sid + '">' +
+            '<span class="text-xs text3">' + item.unit + '</span>' +
+            '<span style="font-size:11px;color:var(--text3);white-space:nowrap;margin-left:4px">단가</span>' +
+            '<button class="btn btn-ghost btn-xs" style="padding:0 8px;flex-shrink:0" onclick="adjustInlinePrice(' + okeyJson + ',' + omonthJson + ',' + oidx + ',-500)">−500</button>' +
+            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:60px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px" id="rprice-' + sid + '">' +
+            '<button class="btn btn-ghost btn-xs" style="padding:0 8px;flex-shrink:0;color:var(--amber)" onclick="adjustInlinePrice(' + okeyJson + ',' + omonthJson + ',' + oidx + ',500)">+500</button>' +
           '</div>' +
-          '<button style="width:28px;height:28px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="toggleInlineReceive(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ')">' +
-            (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="12" height="12"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
-          '</button>' +
         '</div>';
       }).join('');
       return '<div style="border-bottom:0.5px solid var(--border)">' +
