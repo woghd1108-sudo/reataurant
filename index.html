@@ -278,7 +278,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리</h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.5</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -1095,11 +1095,11 @@ function renderHistory() {
             '<span style="font-size:13px;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + item.name + '</span>' +
             (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);margin-left:4px">' + item.receivedDateStr.slice(5).replace('-','/') + '입고</span>' : '') +
           '</div>' +
-          '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:52px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rqty-' + okey + '-' + oidx + '">' +
+          '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:52px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rqty-' + safeId(okey, oidx) + '">' +
           '<span class="text-xs text3">' + item.unit + '</span>' +
           '<div style="display:flex;align-items:center;gap:3px">' +
             '<button class="btn btn-ghost btn-xs" style="width:32px;padding:0" onclick="adjustInlinePrice(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ',-500)">−</button>' +
-            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="width:72px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rprice-' + okey + '-' + oidx + '">' +
+            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="width:72px;font-size:12px;padding:4px 6px;text-align:center;border-radius:6px;' + inputBg + '" id="rprice-' + safeId(okey, oidx) + '">' +
             '<button class="btn btn-ghost btn-xs" style="width:32px;padding:0;color:var(--amber)" onclick="adjustInlinePrice(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ',500)">+</button>' +
           '</div>' +
           '<button style="width:28px;height:28px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="toggleInlineReceive(' + JSON.stringify(okey) + ',' + JSON.stringify(omonth) + ',' + oidx + ')">' +
