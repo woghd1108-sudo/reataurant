@@ -278,7 +278,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.7</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.9</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -956,20 +956,16 @@ async function submitOrder() {
 // 공유 시트
 // ══════════════════════════════════════════
 function makeOrderText(order) {
-  const d = new Date(order.createdAt);
-  const ds = `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // 카테고리별로 묶기
   const catMap = {};
   (order.items || []).forEach(i => { (catMap[i.cat] = catMap[i.cat] || []).push(i); });
-  let txt = `[발주] ${ds}\n`;
-  if (order.memo) txt += `메모: ${order.memo}\n`;
-  txt += `───────────────\n`;
-  Object.entries(catMap).forEach(([cat, its]) => {
-    txt += `▶ ${cat}\n`;
-    its.forEach(i => txt += `  ${i.name} ${i.qty}${i.unit}\n`);
+  // 카테고리별 문자 형식으로 합치기
+  const parts = Object.entries(catMap).map(([cat, its]) => {
+    return `${settings.greeting} ${settings.storeName} 입니다\n` +
+      its.map(i => `${i.name} ${i.qty}`).join('\n') +
+      '\n' + settings.closing;
   });
-  const total = (order.items || []).reduce((s, i) => s + i.qty * i.price, 0);
-  txt += `───────────────\n합계: ${commas(total)}원`;
-  return txt;
+  return parts.join('\n\n──────────\n\n');
 }
 
 function makeCatSmsText(cat, catItems) {
@@ -1369,19 +1365,24 @@ async function toggleReceived(key, month, idx) {
 async function deleteDateGroup(date) {
   const orders = allOrders.filter(o => toDateStr(o.createdAt) === date);
   if (!orders.length) return;
-  if (!confirm(`${date} 발주 ${orders.length}건을 모두 삭제할까요?`)) return;
+  if (!confirm(date + ' 발주 ' + orders.length + '건을 모두 삭제할까요?')) return;
   try {
     for (const o of orders) {
-      await window._fn.remove(dbRef(`orders/${o.month}/${o.key}`));
+      await window._fn.remove(dbRef('orders/' + o.month + '/' + o.key)).catch(() => {});
+      await window._fn.remove(dbRef('orders/' + o.key)).catch(() => {});
     }
-    showToast(`${orders.length}건 삭제됨`);
+    showToast(orders.length + '건 삭제됨');
   } catch (e) { showToast('삭제 실패'); }
 }
 
 async function deleteOrder(key, month) {
   if (!confirm('발주 내역을 삭제할까요?')) return;
   try {
-    await window._fn.remove(dbRef(`orders/${month}/${key}`));
+    // 발주 데이터 삭제
+    const order = allOrders.find(o => o.key === key);
+    await window._fn.remove(dbRef('orders/' + month + '/' + key));
+    // 구버전 경로도 시도
+    await window._fn.remove(dbRef('orders/' + key)).catch(() => {});
     showToast('삭제됨');
   } catch (e) { showToast('삭제 실패'); }
 }
@@ -1557,6 +1558,14 @@ async function savePriceEdit() {
 }
 
 async function recordPrice(id, price, memo) {
+  if (!id) return;
+  // 같은 가격이면 스킵
+  const hist = priceHistory[id];
+  if (hist) {
+    const keys = Object.keys(hist);
+    const lastPrice = hist[keys[keys.length - 1]]?.price;
+    if (lastPrice === price && !memo) return;
+  }
   const entry = { date: Date.now(), price, memo: memo || '' };
   const newRef = window._fn.push(dbRef('priceHistory/' + id));
   await window._fn.set(newRef, entry);
