@@ -499,7 +499,28 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
   </div>
 </div>
 
-<!-- 토스트 -->
+<!-- 입고확인 모달 -->
+<div class="modal-bg" id="receive-modal" onclick="closeBg('receive-modal',event)">
+  <div class="modal-box">
+    <div class="modal-title" id="receive-modal-title">입고 확인</div>
+    <div style="background:var(--bg3);border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--text2)" id="receive-order-info"></div>
+    <div class="modal-field">
+      <label>실입고 수량 <span class="text3" id="receive-unit-label"></span></label>
+      <input type="number" id="receive-qty" inputmode="decimal" step="0.01" placeholder="발주 수량과 다를 때만 수정">
+    </div>
+    <div class="modal-field">
+      <label>실입고 단가 (원)</label>
+      <input type="number" id="receive-price" inputmode="numeric" placeholder="발주 단가와 다를 때만 수정">
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" style="background:var(--green);color:#fff;flex:2" onclick="confirmReceive()">✓ 입고 완료</button>
+      <button class="btn btn-ghost btn-sm" onclick="cancelReceive()" style="flex:1;color:var(--red)">입고 취소</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('receive-modal')" style="flex:1">닫기</button>
+    </div>
+  </div>
+</div>
+
+
 <div id="toast"></div>
 
 <script>
@@ -1049,20 +1070,30 @@ function renderHistory() {
 
     // 카테고리별 품목 목록 (접힌 상태에서 보이는 요약)
     const catSummary = Object.entries(catMap).map(([cat, items]) => {
-      const catTotal = items.reduce((s, i) => s + i.qty * i.price, 0);
+      const catTotal = items.reduce((s, i) => {
+        const qty = i.actualQty != null ? i.actualQty : i.qty;
+        const price = i.actualPrice != null ? i.actualPrice : i.price;
+        return s + qty * price;
+      }, 0);
       return `<div style="padding:9px 12px;border-bottom:0.5px solid var(--border);background:var(--bg2)">
         <div class="flex items-center gap8" style="margin-bottom:5px">
           <span style="font-size:12px;font-weight:700;color:var(--amber);min-width:60px">${cat}</span>
           <span class="mono text-xs text2">${commas(catTotal)}원</span>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px">
-          ${items.map(item => `
-            <div style="display:flex;align-items:center;gap:4px;background:${item.received ? 'var(--bg3)' : 'var(--bg2)'};border:0.5px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer"
-              onclick="toggleReceivedFromSummary('${item.orderKey}','${item.orderMonth}',${item.itemIdx})">
+          ${items.map(item => {
+            const actualQty = item.actualQty != null ? item.actualQty : item.qty;
+            const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
+            const hasActual = item.actualQty != null || item.actualPrice != null;
+            return `<div style="display:flex;align-items:center;gap:4px;background:${item.received ? 'var(--bg3)' : 'var(--bg2)'};border:0.5px solid ${item.received ? 'var(--green)' : 'var(--border)'};border-radius:6px;padding:4px 8px;cursor:pointer"
+              onclick="openReceiveModal('${item.orderKey}','${item.orderMonth}',${item.itemIdx})">
               <span style="font-size:12px;${item.received ? 'text-decoration:line-through;color:var(--text3)' : ''}">${item.name}</span>
-              <span class="mono text-xs text3">${item.qty}${item.unit}</span>
+              <span class="mono text-xs" style="color:${hasActual ? 'var(--amber)' : 'var(--text3)'}">
+                ${actualQty}${item.unit}${hasActual && item.actualPrice != null ? ' · ' + commas(actualPrice) + '원' : ''}
+              </span>
               ${item.received ? '<svg viewBox="0 0 20 20" fill="currentColor" style="width:10px;height:10px;color:var(--green)"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : ''}
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
     }).join('');
@@ -1115,8 +1146,65 @@ function toggleOrderCard(key, month) {
 }
 
 
-async function toggleReceivedFromSummary(key, month, idx) {
-  await toggleReceived(key, month, idx);
+let receiveTarget = null; // {key, month, idx, item}
+
+function openReceiveModal(key, month, idx) {
+  const order = allOrders.find(o => o.key === key && o.month === month);
+  if (!order) return;
+  const item = order.items[idx];
+  if (!item) return;
+  receiveTarget = { key, month, idx, item };
+
+  document.getElementById('receive-modal-title').textContent = item.name + ' 입고 확인';
+  document.getElementById('receive-unit-label').textContent = '(' + item.unit + ')';
+  document.getElementById('receive-order-info').textContent =
+    '발주: ' + item.qty + item.unit + ' · ' + commas(item.price) + '원/'+item.unit;
+
+  const qty = item.actualQty != null ? item.actualQty : item.qty;
+  const price = item.actualPrice != null ? item.actualPrice : item.price;
+  document.getElementById('receive-qty').value = qty;
+  document.getElementById('receive-price').value = price;
+
+  openModal('receive-modal');
+}
+
+async function confirmReceive() {
+  if (!receiveTarget) return;
+  const { key, month, idx, item } = receiveTarget;
+  const qtyVal = parseFloat(document.getElementById('receive-qty').value);
+  const priceVal = parseInt(document.getElementById('receive-price').value);
+
+  if (isNaN(qtyVal) || qtyVal <= 0) { showToast('수량을 입력하세요'); return; }
+  if (isNaN(priceVal) || priceVal <= 0) { showToast('단가를 입력하세요'); return; }
+
+  const updates = {
+    received: true,
+    actualQty: qtyVal,
+    actualPrice: priceVal
+  };
+
+  try {
+    await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), updates);
+    // 단가가 달라졌으면 가격이력 기록
+    if (priceVal !== item.price) {
+      await recordPrice(item.id || '', priceVal, '실입고 단가');
+      currentPrices[item.id] = priceVal;
+    }
+    closeModal('receive-modal');
+    showToast('입고 완료 ✓');
+  } catch (e) { showToast('업데이트 실패'); }
+}
+
+async function cancelReceive() {
+  if (!receiveTarget) return;
+  const { key, month, idx } = receiveTarget;
+  try {
+    await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), {
+      received: false, actualQty: null, actualPrice: null
+    });
+    closeModal('receive-modal');
+    showToast('입고 취소');
+  } catch (e) { showToast('업데이트 실패'); }
 }
 
 function openDayShareModal(date) {
@@ -1242,11 +1330,14 @@ function renderStats() {
   const itemMap = {}, catMap = {};
   filtered.forEach(order => {
     (order.items || []).forEach(item => {
-      const sub = item.qty * item.price;
+      // 실입고 수량/단가 우선 반영
+      const qty = item.actualQty != null ? item.actualQty : item.qty;
+      const price = item.actualPrice != null ? item.actualPrice : item.price;
+      const sub = qty * price;
       totalAmt += sub;
       if (!itemMap[item.name]) itemMap[item.name] = { amt: 0, qty: 0, unit: item.unit };
       itemMap[item.name].amt += sub;
-      itemMap[item.name].qty += item.qty;
+      itemMap[item.name].qty += qty;
       if (!catMap[item.cat]) catMap[item.cat] = { amt: 0 };
       catMap[item.cat].amt += sub;
     });
