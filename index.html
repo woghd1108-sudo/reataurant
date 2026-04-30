@@ -278,7 +278,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.5</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.6</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -1074,46 +1074,46 @@ function renderHistory() {
 
     // 카테고리별 품목 목록 (접힌 상태에서 보이는 요약)
     // 그날 전체 품목을 카테고리별 세로 목록으로 표시
-    const allItems = Object.entries(catMap).map(([cat, items]) => ({ cat, items }));
-    const catSummary = allItems.map(({ cat, items }) => {
-      const catTotal = items.reduce((s, i) => {
+    // 그날 전체 품목을 카테고리별 세로 목록으로 표시
+    const catSummary = Object.entries(catMap).map(function(catEntry) {
+      const cat = catEntry[0];
+      const items = catEntry[1];
+      const catTotal = items.reduce(function(s, i) {
         const qty = i.actualQty != null ? i.actualQty : i.qty;
         const price = i.actualPrice != null ? i.actualPrice : i.price;
         return s + qty * price;
       }, 0);
-      const itemRows = items.map(item => {
+
+      const itemRows = items.map(function(item) {
         const actualQty = item.actualQty != null ? item.actualQty : item.qty;
         const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
         const rcvd = item.received;
-        const okey = item.orderKey;
-        const omonth = item.orderMonth;
-        const oidx = item.itemIdx;
-        const sid = safeId(okey, oidx);
-        const okeyJson = JSON.stringify(okey);
-        const omonthJson = JSON.stringify(omonth);
+        const sid = safeId(item.orderKey, item.itemIdx);
+        const chkStyle = 'width:26px;height:26px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
         return '<div style="padding:8px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'var(--bg3)' : 'var(--bg2)') + '">' +
           '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
             '<span style="font-size:13px;font-weight:500;flex:1;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + item.name + '</span>' +
             (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green)">' + item.receivedDateStr.slice(5).replace('-','/') + '입고</span>' : '') +
-            '<button style="width:26px;height:26px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0" onclick="toggleInlineReceive(' + okeyJson + ',' + omonthJson + ',' + oidx + ')">' +
+            '<button style="' + chkStyle + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" onclick="toggleInlineReceive(this.dataset.key,this.dataset.month,+this.dataset.idx)">' +
               (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="12" height="12"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
             '</button>' +
           '</div>' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<span style="font-size:11px;color:var(--text3);white-space:nowrap">수량</span>' +
-            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:60px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px" id="rqty-' + sid + '">' +
-            '<span class="text-xs text3">' + item.unit + '</span>' +
-            '<span style="font-size:11px;color:var(--text3);white-space:nowrap;margin-left:4px">단가</span>' +
-            '<button class="btn btn-ghost btn-xs" style="padding:0 8px;flex-shrink:0" onclick="adjustInlinePrice(' + okeyJson + ',' + omonthJson + ',' + oidx + ',-500)">−500</button>' +
-            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:60px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px" id="rprice-' + sid + '">' +
-            '<button class="btn btn-ghost btn-xs" style="padding:0 8px;flex-shrink:0;color:var(--amber)" onclick="adjustInlinePrice(' + okeyJson + ',' + omonthJson + ',' + oidx + ',500)">+500</button>' +
+          '<div style="display:flex;align-items:center;gap:5px">' +
+            '<span style="font-size:11px;color:var(--text3)">수량</span>' +
+            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rqty-' + sid + '">' +
+            '<span style="font-size:11px;color:var(--text3)">' + item.unit + '</span>' +
+            '<span style="font-size:11px;color:var(--text3);margin-left:4px">단가</span>' +
+            '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;cursor:pointer" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
+            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rprice-' + sid + '">' +
+            '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;color:var(--amber);cursor:pointer" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
           '</div>' +
         '</div>';
       }).join('');
+
       return '<div style="border-bottom:0.5px solid var(--border)">' +
         '<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--bg3)">' +
           '<span style="font-size:12px;font-weight:700;color:var(--amber);flex:1">' + cat + '</span>' +
-          '<span class="mono text-xs text2">' + commas(catTotal) + '원</span>' +
+          '<span style="font-size:11px;font-family:monospace;color:var(--text2)">' + commas(catTotal) + '원</span>' +
         '</div>' +
         itemRows +
       '</div>';
@@ -1174,10 +1174,10 @@ function safeId(key, idx) {
   return (key + '-' + idx).replace(/[^a-zA-Z0-9-_]/g, '_');
 }
 
-function adjustInlinePrice(key, month, idx, delta) {
-  const el = document.getElementById('rprice-' + safeId(key, idx));
-  if (!el) return;
-  el.value = Math.max(0, (parseInt(el.value) || 0) + delta);
+function adjustInlinePrice(sid, delta) {
+  const el = document.getElementById('rprice-' + sid);
+  if (!el) { console.log('못찾음: rprice-' + sid); return; }
+  el.value = Math.max(0, (parseInt(el.value) || 0) + parseInt(delta));
 }
 
 async function toggleInlineReceive(key, month, idx) {
