@@ -278,7 +278,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.6</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.7</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -794,6 +794,20 @@ function setCatFromDropdown(c) {
   setCat(c);
 }
 
+// input 클릭 시 숫자패드
+document.addEventListener('click', function(e) {
+  const inp = e.target.closest('input[data-nptype]');
+  if (inp) {
+    const nptype = inp.dataset.nptype;
+    const sid = inp.dataset.sid;
+    const unit = inp.dataset.unit;
+    const val = parseFloat(inp.dataset.val) || parseFloat(inp.value) || 0;
+    const name = inp.dataset.name || '';
+    const inputId = (nptype === 'receiveQty' ? 'rqty-' : 'rprice-') + sid;
+    openNpReceive(inputId, nptype, name + (nptype === 'receiveQty' ? ' 수량' : ' 단가'), unit, val);
+  }
+});
+
 // 외부 클릭시 드롭다운 닫기
 document.addEventListener('click', () => {
   const menu = document.getElementById('cat-dropdown-menu');
@@ -1100,11 +1114,11 @@ function renderHistory() {
           '</div>' +
           '<div style="display:flex;align-items:center;gap:5px">' +
             '<span style="font-size:11px;color:var(--text3)">수량</span>' +
-            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rqty-' + sid + '">' +
+            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rqty-' + sid + '" readonly style="cursor:pointer" data-nptype="receiveQty" data-sid="" + sid + "" data-unit="" + item.unit + "" data-val="" + actualQty + "" data-name="" + item.name + "">' +
             '<span style="font-size:11px;color:var(--text3)">' + item.unit + '</span>' +
             '<span style="font-size:11px;color:var(--text3);margin-left:4px">단가</span>' +
             '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;cursor:pointer" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
-            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rprice-' + sid + '">' +
+            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rprice-' + sid + '" readonly style="cursor:pointer" data-nptype="receivePrice" data-sid="" + sid + "" data-unit="원" data-val="" + actualPrice + "" data-name="" + item.name + "">' +
             '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;color:var(--amber);cursor:pointer" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
           '</div>' +
         '</div>';
@@ -1816,8 +1830,39 @@ function npConfirm() {
     currentQty[npTarget.id] = Math.max(0, val);
     updateItemRow(npTarget.id);
     updateOrderCount();
+  } else if (npTarget.type === 'receiveQty' || npTarget.type === 'receivePrice') {
+    const el = document.getElementById(npTarget.inputId);
+    if (el) el.value = val;
   }
   document.getElementById('np-overlay').classList.remove('open');
+}
+
+function openNpReceive(inputId, type, title, unit, currentVal) {
+  npTarget = { type, inputId };
+  npStr = currentVal ? String(Math.abs(currentVal)) : '';
+  npIsNeg = currentVal < 0;
+  document.getElementById('np-title').textContent = title;
+  document.getElementById('np-unit').textContent = unit;
+  document.getElementById('np-neg-btn').style.display = type === 'receivePrice' ? 'flex' : 'none';
+  // 단가는 +500/-500 퀵버튼
+  if (type === 'receivePrice') {
+    document.getElementById('np-quick').innerHTML =
+      '<div class="np-quick-btn" onclick="npQuickAdj(-1000)">−1,000</div>' +
+      '<div class="np-quick-btn" onclick="npQuickAdj(-500)">−500</div>' +
+      '<div class="np-quick-btn" onclick="npQuickAdj(500)">+500</div>' +
+      '<div class="np-quick-btn" onclick="npQuickAdj(1000)">+1,000</div>';
+  } else {
+    document.getElementById('np-quick').innerHTML = '';
+  }
+  npUpdateDisplay();
+  document.getElementById('np-overlay').classList.add('open');
+}
+
+function npQuickAdj(delta) {
+  const cur = parseInt(npStr) || 0;
+  const newVal = Math.max(0, cur + delta);
+  npStr = String(newVal);
+  npUpdateDisplay();
 }
 
 // ══════════════════════════════════════════
