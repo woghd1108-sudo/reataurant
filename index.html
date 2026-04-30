@@ -510,7 +510,11 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
     </div>
     <div class="modal-field">
       <label>실입고 단가 (원)</label>
-      <input type="number" id="receive-price" inputmode="numeric" placeholder="발주 단가와 다를 때만 수정">
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="adjustPrice(-500)" style="flex-shrink:0">−500</button>
+        <input type="number" id="receive-price" inputmode="numeric" placeholder="발주 단가와 다를 때만 수정" style="flex:1">
+        <button class="btn btn-ghost btn-sm" onclick="adjustPrice(500)" style="flex-shrink:0;color:var(--amber)">+500</button>
+      </div>
     </div>
     <div class="modal-btns">
       <button class="btn btn-ghost" style="background:var(--green);color:#fff;flex:2" onclick="confirmReceive()">✓ 입고 완료</button>
@@ -1166,6 +1170,12 @@ function openReceiveModal(key, month, idx) {
   document.getElementById('receive-price').value = price;
 
   openModal('receive-modal');
+}
+
+function adjustPrice(delta) {
+  const el = document.getElementById('receive-price');
+  const cur = parseInt(el.value) || 0;
+  el.value = Math.max(0, cur + delta);
 }
 
 async function confirmReceive() {
