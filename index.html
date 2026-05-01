@@ -271,7 +271,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.16</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.17</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -404,6 +404,21 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
     <div class="modal-btns">
       <button class="btn btn-dark" onclick="submitOrder()">저장 & 공유</button>
       <button class="btn btn-ghost" onclick="closeModal('confirm-modal')">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- 입고날짜 선택 모달 -->
+<div class="modal-bg" id="recv-date-modal" onclick="closeBg('recv-date-modal',event)">
+  <div class="modal-box" style="padding:20px 16px 28px">
+    <div class="modal-title">📦 입고 확인</div>
+    <div class="modal-field">
+      <label style="font-size:12px;color:var(--text2)">입고 날짜</label>
+      <input type="date" id="recv-date-input" style="width:100%;font-size:16px;padding:10px 8px;border-radius:8px;margin-top:4px">
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-dark" onclick="confirmRecvDate()">입고 완료</button>
+      <button class="btn btn-ghost" onclick="closeModal('recv-date-modal')">취소</button>
     </div>
   </div>
 </div>
@@ -1181,39 +1196,63 @@ function adjustInlinePrice(sid, delta) {
   el.value = Math.max(0, (parseInt(el.value) || 0) + parseInt(delta));
 }
 
-async function toggleInlineReceive(key, month, idx) {
+// 입고날짜 모달용 임시 저장
+let _recvPending = null;
+
+function toggleInlineReceive(key, month, idx) {
   const order = allOrders.find(o => o.key === key && o.month === month);
   if (!order) return;
   const item = order.items[idx];
   if (!item) return;
 
+  // 이미 입고된 경우 → 바로 취소
+  if (item.received) {
+    (async () => {
+      try {
+        await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), {
+          received: false, actualQty: null, actualPrice: null, receivedAt: null, receivedDateStr: null
+        });
+        showToast('입고 취소');
+      } catch { showToast('업데이트 실패'); }
+    })();
+    return;
+  }
+
+  // 입고 처리 → 날짜 선택 모달 띄우기
   const qtyEl = document.getElementById('rqty-' + safeId(key, idx));
   const priceEl = document.getElementById('rprice-' + safeId(key, idx));
   const qtyVal = parseFloat(qtyEl ? qtyEl.value : item.qty) || item.qty;
   const priceVal = parseInt(priceEl ? priceEl.value : item.price) || item.price;
 
-  const newReceived = !item.received;
-  const updates = { received: newReceived };
-  if (newReceived) {
-    updates.actualQty = qtyVal;
-    updates.actualPrice = priceVal;
-    updates.receivedAt = Date.now();
-    updates.receivedDateStr = toDateStr(Date.now());
-  } else {
-    updates.actualQty = null;
-    updates.actualPrice = null;
-    updates.receivedAt = null;
-    updates.receivedDateStr = null;
-  }
+  _recvPending = { key, month, idx, item, qtyVal, priceVal };
+  document.getElementById('recv-date-input').value = toDateStr(Date.now());
+  openModal('recv-date-modal');
+}
+
+async function confirmRecvDate() {
+  if (!_recvPending) return;
+  const { key, month, idx, item, qtyVal, priceVal } = _recvPending;
+  const dateStr = document.getElementById('recv-date-input').value;
+  if (!dateStr) { showToast('날짜를 선택하세요'); return; }
+
+  const updates = {
+    received: true,
+    actualQty: qtyVal,
+    actualPrice: priceVal,
+    receivedAt: new Date(dateStr).getTime(),
+    receivedDateStr: dateStr
+  };
 
   try {
     await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), updates);
-    if (newReceived && priceVal !== item.price) {
+    if (priceVal !== item.price) {
       await recordPrice(item.id || '', priceVal, '실입고 단가');
       currentPrices[item.id] = priceVal;
     }
-    showToast(newReceived ? '입고 완료 ✓' : '입고 취소');
-  } catch (e) { showToast('업데이트 실패'); }
+    closeModal('recv-date-modal');
+    showToast('입고 완료 ✓');
+    _recvPending = null;
+  } catch { showToast('업데이트 실패'); }
 }
 
 
