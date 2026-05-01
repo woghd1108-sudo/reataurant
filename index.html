@@ -270,7 +270,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.13</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.14</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -472,6 +472,11 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
       <button class="btn btn-dark" onclick="saveSettings()">저장</button>
       <button class="btn btn-ghost" onclick="closeModal('settings-modal')">취소</button>
     </div>
+    <hr style="margin:18px 0 12px;border:none;border-top:1px solid var(--border)">
+    <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:500">🗂 데이터 관리</div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:8px">구버전 발주 데이터를 월별 폴더로 정리합니다.<br>한 번만 실행하면 됩니다.</div>
+    <button class="btn btn-ghost w-full" id="migrate-btn" onclick="migrateOldOrders()" style="font-size:12px">구버전 데이터 정리</button>
+    <div id="migrate-status" style="font-size:11px;color:var(--text2);margin-top:6px;text-align:center;min-height:14px"></div>
   </div>
 </div>
 
@@ -1801,6 +1806,81 @@ async function saveSettings() {
     closeModal('settings-modal');
     showToast('설정 저장됨 ✓');
   } catch { showToast('저장 실패'); }
+}
+
+// ══════════════════════════════════════════
+// 구버전 → 신버전 데이터 마이그레이션 (1회용)
+// ══════════════════════════════════════════
+async function migrateOldOrders() {
+  const btn = document.getElementById('migrate-btn');
+  const status = document.getElementById('migrate-status');
+
+  if (!confirm('구버전 발주 데이터를 월별 폴더로 정리합니다.\n\n진행할까요?')) return;
+
+  btn.disabled = true;
+  status.style.color = 'var(--text2)';
+  status.textContent = '데이터 확인 중...';
+
+  try {
+    // 1. orders 전체 가져오기
+    const snap = await window._fn.get(dbRef('orders'));
+    const all = snap.val() || {};
+
+    // 2. 구버전만 추려내기 (createdAt이 바로 있는 항목)
+    const oldList = [];
+    Object.entries(all).forEach(([key, val]) => {
+      if (val && typeof val === 'object' && val.createdAt) {
+        oldList.push({ key, val });
+      }
+    });
+
+    if (oldList.length === 0) {
+      status.style.color = 'var(--green)';
+      status.textContent = '정리할 구버전 데이터가 없습니다 ✓';
+      btn.disabled = false;
+      return;
+    }
+
+    status.textContent = `${oldList.length}건 이동 중...`;
+
+    // 3. 월별 폴더로 이동 + 원본 삭제
+    let moved = 0, failed = 0;
+    for (const { key, val } of oldList) {
+      const ym = monthKey(val.createdAt);
+      try {
+        // 이미 같은 키가 신버전 위치에 있으면 덮어쓰지 말고 새 키로
+        const existSnap = await window._fn.get(dbRef('orders/' + ym + '/' + key));
+        if (existSnap.exists()) {
+          // 키 충돌 → push로 새 키 부여
+          const newRef = window._fn.push(dbRef('orders/' + ym));
+          await window._fn.set(newRef, val);
+        } else {
+          await window._fn.set(dbRef('orders/' + ym + '/' + key), val);
+        }
+        await window._fn.remove(dbRef('orders/' + key));
+        moved++;
+        status.textContent = `${moved}/${oldList.length} 이동 중...`;
+      } catch (e) {
+        failed++;
+        console.error('이동 실패:', key, e);
+      }
+    }
+
+    if (failed === 0) {
+      status.style.color = 'var(--green)';
+      status.textContent = `완료! ${moved}건 정리됨 ✓`;
+      showToast(`${moved}건 정리 완료`);
+    } else {
+      status.style.color = 'var(--red)';
+      status.textContent = `완료 (성공 ${moved}건 / 실패 ${failed}건)`;
+    }
+  } catch (e) {
+    console.error(e);
+    status.style.color = 'var(--red)';
+    status.textContent = '오류 발생: ' + (e.message || '알 수 없음');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ══════════════════════════════════════════
