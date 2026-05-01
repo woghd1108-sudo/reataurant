@@ -271,7 +271,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.15</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.16</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -1101,11 +1101,11 @@ function renderHistory() {
           '</div>' +
           '<div style="display:flex;align-items:center;gap:5px">' +
             '<span style="font-size:11px;color:var(--text3)">수량</span>' +
-            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rqty-' + sid + '" readonly style="cursor:pointer" data-nptype="receiveQty" data-sid="" + sid + "" data-unit="" + item.unit + "" data-val="" + actualQty + "" data-name="" + item.name + "">' +
+            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px;cursor:pointer" id="rqty-' + sid + '" readonly data-nptype="receiveQty" data-sid="' + sid + '" data-unit="' + item.unit + '" data-val="' + actualQty + '" data-name="' + item.name + '">' +
             '<span style="font-size:11px;color:var(--text3)">' + item.unit + '</span>' +
             '<span style="font-size:11px;color:var(--text3);margin-left:4px">단가</span>' +
             '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;cursor:pointer" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
-            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px" id="rprice-' + sid + '" readonly style="cursor:pointer" data-nptype="receivePrice" data-sid="" + sid + "" data-unit="원" data-val="" + actualPrice + "" data-name="" + item.name + "">' +
+            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px;cursor:pointer" id="rprice-' + sid + '" readonly data-nptype="receivePrice" data-sid="' + sid + '" data-unit="원" data-val="' + actualPrice + '" data-name="' + item.name + '">' +
             '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;color:var(--amber);cursor:pointer" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
           '</div>' +
         '</div>';
@@ -1674,9 +1674,10 @@ function renderCatalogContent() {
         <button class="btn btn-ghost btn-xs" style="align-self:flex-end" onclick="savePhone('${escAttr(cat)}')">저장</button>
       </div>
       <div class="cat-items-list">
-        ${items.map(item => `<div class="cat-item-row">
+        ${items.map(item => `<div class="cat-item-row" id="item-row-${item.id}">
           <span style="flex:1">${item.name} <span class="text3 text-xs">${item.unit}</span>${item.defaultPrice < 0 ? ' <span style="color:var(--green);font-size:10px">환급</span>' : ''}</span>
           <span class="mono text-xs text2">${commas(item.defaultPrice)}원</span>
+          <button class="btn btn-ghost btn-xs" onclick="startEditItem('${item.id}')">수정</button>
           <button class="btn btn-danger btn-xs" onclick="deleteItem('${item.id}')">삭제</button>
         </div>`).join('')}
       </div>
@@ -1760,6 +1761,36 @@ async function deleteItem(id) {
     showToast('삭제됨');
     renderCatalogContent();
   } catch { showToast('삭제 실패'); }
+}
+
+function startEditItem(id) {
+  const item = CATALOG.find(i => i.id === id);
+  if (!item) return;
+  const row = document.getElementById('item-row-' + id);
+  if (!row) return;
+  row.innerHTML = `
+    <input id="edit-name-${id}" value="${item.name}" style="flex:1;min-width:0;font-size:12px;padding:4px 6px;border-radius:6px">
+    <input id="edit-unit-${id}" value="${item.unit}" style="width:44px;font-size:12px;padding:4px 6px;border-radius:6px;text-align:center" placeholder="단위">
+    <input id="edit-price-${id}" type="number" value="${item.defaultPrice}" style="width:70px;font-size:12px;padding:4px 6px;border-radius:6px;text-align:right" placeholder="단가">
+    <button class="btn btn-dark btn-xs" onclick="saveEditItem('${id}')">저장</button>
+    <button class="btn btn-ghost btn-xs" onclick="renderCatalogContent()">취소</button>
+  `;
+  document.getElementById('edit-name-' + id).focus();
+}
+
+async function saveEditItem(id) {
+  const name = (document.getElementById('edit-name-' + id).value || '').trim();
+  const unit = (document.getElementById('edit-unit-' + id).value || '').trim();
+  const price = parseFloat(document.getElementById('edit-price-' + id).value);
+  if (!name) { showToast('품목명을 입력하세요'); return; }
+  if (isNaN(price)) { showToast('단가를 입력하세요'); return; }
+  const item = CATALOG.find(i => i.id === id);
+  if (!item) return;
+  try {
+    await window._fn.update(dbRef('catalog/' + id), { name, unit: unit || item.unit, defaultPrice: price });
+    showToast('수정됨 ✓');
+    renderCatalogContent();
+  } catch { showToast('수정 실패'); }
 }
 
 async function deleteCat(cat) {
