@@ -271,7 +271,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.21</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.22</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -606,42 +606,28 @@ function loadAll() {
     if (v) { settings = { ...settings, ...v }; }
   });
 
-  // 카테고리별 전화번호
-  onValue(dbRef('catPhones'), snap => {
+  // 카테고리 통합 (categories/ 노드: order, phone, url)
+  onValue(dbRef('categories'), snap => {
     const raw = snap.val() || {};
     catPhones = {};
-    const migrateKeys = []; // 인코딩된 키 마이그레이션 목록
-    Object.entries(raw).forEach(([k, v]) => {
-      let decoded = k;
-      try { decoded = decodeURIComponent(k); } catch {}
-      catPhones[decoded] = v;
-      // 키가 인코딩된 형태면 마이그레이션 필요
-      if (decoded !== k) migrateKeys.push({ oldKey: k, newKey: decoded, val: v });
-    });
-    // 인코딩된 키를 한글 키로 자동 변환
-    if (migrateKeys.length > 0 && fbReady) {
-      migrateKeys.forEach(({ oldKey, newKey, val }) => {
-        window._fn.set(dbRef('catPhones/' + newKey), val).then(() => {
-          window._fn.remove(dbRef('catPhones/' + oldKey));
-        }).catch(() => {});
-      });
-    }
-  });
-
-  // 카테고리 순서
-  onValue(dbRef('catOrder'), snap => {
-    catOrderList = snap.val() || [];
-    // CATALOG도 재정렬
+    catOrderList = [];
+    // order 필드가 있는 것들을 정렬해서 catOrderList 재구성
+    const catEntries = Object.entries(raw).map(([cat, v]) => ({ cat, order: v.order ?? 999, phone: v.phone || '', url: v.url || '' }));
+    catEntries.sort((a, b) => a.order - b.order);
+    catOrderList = catEntries.map(e => e.cat);
+    catEntries.forEach(e => { catPhones[e.cat] = { phone: e.phone, url: e.url }; });
+    // CATALOG 재정렬
     if (CATALOG.length > 0) {
       CATALOG.sort((a, b) => {
-        const order = catOrderList.length > 0 ? catOrderList : [...new Set(DEFAULT_CATALOG.map(i => i.cat))];
-        const ai = order.indexOf(a.cat), bi = order.indexOf(b.cat);
+        const ai = catOrderList.indexOf(a.cat), bi = catOrderList.indexOf(b.cat);
         if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
         return 0;
       });
     }
     renderCats();
     renderItemList();
+    // 구버전 catPhones/catOrder 마이그레이션 (1회)
+    migrateLegacyCatData();
   });
 
   // 카탈로그
@@ -650,8 +636,7 @@ function loadAll() {
     if (data && Object.keys(data).length > 0) {
       CATALOG = Object.entries(data).map(([id, v]) => ({ id, ...v }));
       CATALOG.sort((a, b) => {
-        const order = catOrderList.length > 0 ? catOrderList : [...new Set(DEFAULT_CATALOG.map(i => i.cat))];
-        const ai = order.indexOf(a.cat), bi = order.indexOf(b.cat);
+        const ai = catOrderList.indexOf(a.cat), bi = catOrderList.indexOf(b.cat);
         if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
         return 0;
       });
@@ -845,7 +830,6 @@ function renderItemList() {
             <div class="item-name">${item.name}${isRefund ? ' <span style="font-size:10px;color:var(--green);font-weight:600">환급</span>' : ''}${item.isMeat ? ' <span class="badge badge-amber" style="font-size:9px">육류</span>' : ''}</div>
             <div class="item-meta">
               <span class="text3 text-xs">${item.unit}</span>
-              <span class="item-price ${isNeg ? 'negative' : ''}" onclick="openPriceEditModal('${item.id}')">${commas(price)}원</span>
             </div>
           </div>
           <div class="qty-ctrl">
@@ -905,20 +889,15 @@ function openConfirmModal() {
   const items = CATALOG.filter(i => (currentQty[i.id] || 0) > 0);
   if (!items.length) { showToast('발주 품목을 선택하세요'); return; }
   const listEl = document.getElementById('confirm-list');
-  let total = 0;
   listEl.innerHTML = items.map(item => {
     const qty = currentQty[item.id];
     const price = currentPrices[item.id] !== undefined ? currentPrices[item.id] : item.defaultPrice;
-    const sub = qty * price;
-    total += sub;
     const isNeg = price < 0;
     return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:0.5px solid var(--border);font-size:13px">
       <span>${item.name}${isNeg ? ' <span style="color:var(--green);font-size:11px">환급</span>' : ''}</span>
-      <span class="mono ${isNeg ? 'text-green' : ''}">${qty}${item.unit} = <b style="color:${isNeg ? 'var(--green)' : 'var(--amber)'}">${commas(sub)}원</b></span>
+      <span class="mono fw5">${qty}<span style="font-size:11px;color:var(--text3);margin-left:2px">${item.unit}</span></span>
     </div>`;
-  }).join('') + `<div style="display:flex;justify-content:space-between;padding:10px 0;font-size:14px;font-weight:700">
-    <span>합계</span><span class="mono">${commas(total)}원</span>
-  </div>`;
+  }).join('');
   document.getElementById('confirm-memo').value = '';
   document.getElementById('confirm-date').value = toDateStr(Date.now());
   openModal('confirm-modal');
@@ -945,10 +924,6 @@ async function submitOrder() {
   try {
     const newRef = window._fn.push(dbRef('orders/' + ym));
     await window._fn.set(newRef, orderData);
-    // 가격 이력 기록
-    for (const item of items) {
-      await recordPrice(item.id, currentPrices[item.id] !== undefined ? currentPrices[item.id] : item.defaultPrice, '');
-    }
     closeModal('confirm-modal');
     const savedOrder = { key: newRef.key, month: ym, ...orderData };
     currentQty = {};
@@ -1105,23 +1080,30 @@ function renderHistory() {
         const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
         const rcvd = item.received;
         const sid = safeId(item.orderKey, item.itemIdx);
-        const chkStyle = 'width:26px;height:26px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
-        return '<div style="padding:8px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'var(--bg3)' : 'var(--bg2)') + '">' +
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">' +
+        const chkStyle = 'width:28px;height:28px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
+        return '<div style="padding:10px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'rgba(29,158,117,0.04)' : 'var(--bg2)') + '">' +
+          // 1줄: 품목명 + 입고날짜 + 체크버튼
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
             '<span style="font-size:13px;font-weight:500;flex:1;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + item.name + '</span>' +
-            (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green)">' + item.receivedDateStr.slice(5).replace('-','/') + '입고</span>' : '') +
+            (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);background:rgba(29,158,117,0.12);padding:2px 6px;border-radius:10px">' + item.receivedDateStr.slice(5).replace('-','/') + ' 입고</span>' : '') +
             '<button style="' + chkStyle + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" onclick="toggleInlineReceive(this.dataset.key,this.dataset.month,+this.dataset.idx)">' +
-              (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="12" height="12"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
+              (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="13" height="13"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
             '</button>' +
           '</div>' +
-          '<div style="display:flex;align-items:center;gap:5px">' +
-            '<span style="font-size:11px;color:var(--text3)">수량</span>' +
-            '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px;cursor:pointer" id="rqty-' + sid + '" readonly data-nptype="receiveQty" data-sid="' + sid + '" data-unit="' + item.unit + '" data-val="' + actualQty + '" data-name="' + item.name + '">' +
-            '<span style="font-size:11px;color:var(--text3)">' + item.unit + '</span>' +
-            '<span style="font-size:11px;color:var(--text3);margin-left:4px">단가</span>' +
-            '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;cursor:pointer" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
-            '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:55px;font-size:13px;padding:5px 4px;text-align:center;border-radius:6px;cursor:pointer" id="rprice-' + sid + '" readonly data-nptype="receivePrice" data-sid="' + sid + '" data-unit="원" data-val="' + actualPrice + '" data-name="' + item.name + '">' +
-            '<button style="padding:5px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;color:var(--amber);cursor:pointer" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
+          // 2줄: 수량 | 단가
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<div style="display:flex;align-items:center;gap:4px;flex:1">' +
+              '<span style="font-size:11px;color:var(--text3);white-space:nowrap">수량</span>' +
+              '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:56px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px;cursor:pointer" id="rqty-' + sid + '" readonly data-nptype="receiveQty" data-sid="' + sid + '" data-unit="' + item.unit + '" data-val="' + actualQty + '" data-name="' + item.name + '">' +
+              '<span style="font-size:11px;color:var(--text3)">' + item.unit + '</span>' +
+            '</div>' +
+            '<div style="width:0.5px;height:20px;background:var(--border)"></div>' +
+            '<div style="display:flex;align-items:center;gap:4px;flex:1.4">' +
+              '<span style="font-size:11px;color:var(--text3);white-space:nowrap">단가</span>' +
+              '<button style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
+              '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:52px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px;cursor:pointer" id="rprice-' + sid + '" readonly data-nptype="receivePrice" data-sid="' + sid + '" data-unit="원" data-val="' + actualPrice + '" data-name="' + item.name + '">' +
+              '<button style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;color:var(--amber);cursor:pointer;display:flex;align-items:center;justify-content:center" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
+            '</div>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -1293,8 +1275,8 @@ async function confirmRecvDate() {
           received: true, actualQty: qtyVal, actualPrice: priceVal,
           receivedAt, receivedDateStr: dateStr
         });
-        if (priceVal !== item.price) {
-          await recordPrice(item.id || '', priceVal, '실입고 단가');
+        if (item.id) {
+          await recordPrice(item.id, priceVal, '실입고 단가');
           currentPrices[item.id] = priceVal;
         }
         done++;
@@ -1317,8 +1299,8 @@ async function confirmRecvDate() {
       received: true, actualQty: qtyVal, actualPrice: priceVal,
       receivedAt, receivedDateStr: dateStr
     });
-    if (priceVal !== item.price) {
-      await recordPrice(item.id || '', priceVal, '실입고 단가');
+    if (item.id) {
+      await recordPrice(item.id, priceVal, '실입고 단가');
       currentPrices[item.id] = priceVal;
     }
     closeModal('recv-date-modal');
@@ -1808,7 +1790,12 @@ async function moveCat(idx, dir) {
   const tmp = cats[idx]; cats[idx] = cats[newIdx]; cats[newIdx] = tmp;
   catOrderList = cats;
   try {
-    await window._fn.set(dbRef('catOrder'), cats);
+    // categories/ 노드에 order 필드 업데이트
+    const updates = {};
+    cats.forEach((cat, i) => {
+      updates['categories/' + cat.replace(/[.$#\[\]/]/g, '_') + '/order'] = i;
+    });
+    await window._fn.update(dbRef('/'), updates);
     renderCatalogContent();
     renderCats();
     renderItemList();
@@ -1823,8 +1810,9 @@ async function savePhone(cat) {
   const phone = phoneInp ? phoneInp.value.trim() : '';
   const url = urlInp ? urlInp.value.trim() : '';
   catPhones[cat] = { phone, url };
+  const idx = catOrderList.indexOf(cat);
   try {
-    await window._fn.set(dbRef('catPhones/' + cat.replace(/[.$#\[\]/]/g, '_')), { phone, url });
+    await window._fn.update(dbRef('categories/' + cat.replace(/[.$#\[\]/]/g, '_')), { phone, url, order: idx === -1 ? 999 : idx });
     showToast('저장됨 ✓');
   } catch { showToast('저장 실패'); }
 }
@@ -1952,6 +1940,47 @@ async function saveSettings() {
     closeModal('settings-modal');
     showToast('설정 저장됨 ✓');
   } catch { showToast('저장 실패'); }
+}
+
+// 구버전 catPhones/catOrder → categories/ 마이그레이션 (1회용)
+let _catMigrated = false;
+async function migrateLegacyCatData() {
+  if (_catMigrated) return;
+  _catMigrated = true;
+  try {
+    const [phonesSnap, orderSnap, catsSnap] = await Promise.all([
+      window._fn.get(dbRef('catPhones')),
+      window._fn.get(dbRef('catOrder')),
+      window._fn.get(dbRef('categories'))
+    ]);
+    const oldPhones = phonesSnap.val();
+    const oldOrder = orderSnap.val();
+    const alreadyMigrated = catsSnap.val();
+    if (!oldPhones && !oldOrder) return; // 구버전 데이터 없음
+    if (alreadyMigrated && Object.keys(alreadyMigrated).length > 0) {
+      // 이미 마이그레이션 완료 → 구버전 노드 정리
+      if (oldPhones) await window._fn.remove(dbRef('catPhones')).catch(() => {});
+      if (oldOrder) await window._fn.remove(dbRef('catOrder')).catch(() => {});
+      return;
+    }
+    // categories/ 에 통합
+    const orderArr = oldOrder || [];
+    const phonesObj = oldPhones || {};
+    const updates = {};
+    const allCats = [...new Set([...orderArr, ...Object.keys(phonesObj).map(k => { try { return decodeURIComponent(k); } catch { return k; } })])];
+    allCats.forEach((cat, i) => {
+      const safeKey = cat.replace(/[.$#\[\]/]/g, '_');
+      const phoneData = phonesObj[cat] || phonesObj[encodeURIComponent(cat)] || {};
+      const phone = typeof phoneData === 'string' ? phoneData : (phoneData.phone || '');
+      const url = typeof phoneData === 'object' ? (phoneData.url || '') : '';
+      updates['categories/' + safeKey] = { order: orderArr.indexOf(cat) !== -1 ? orderArr.indexOf(cat) : i, phone, url };
+    });
+    if (Object.keys(updates).length > 0) {
+      await window._fn.update(dbRef('/'), updates);
+      await window._fn.remove(dbRef('catPhones')).catch(() => {});
+      await window._fn.remove(dbRef('catOrder')).catch(() => {});
+    }
+  } catch(e) { /* 마이그레이션 실패는 조용히 */ }
 }
 
 // ══════════════════════════════════════════
