@@ -271,7 +271,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.17</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.21</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -1126,10 +1126,18 @@ function renderHistory() {
         '</div>';
       }).join('');
 
+      const allRcvd = items.every(i => i.received);
+      const pendingItems = items.filter(i => !i.received);
+      const catBtnLabel = allRcvd ? '✓입고됨' : '입고완료';
+      const catBtnStyle = allRcvd
+        ? 'font-size:11px;padding:3px 8px;border-radius:12px;border:none;background:rgba(29,158,117,.15);color:var(--green);cursor:default'
+        : 'font-size:11px;padding:3px 8px;border-radius:12px;border:0.5px solid var(--border2);background:var(--bg4);color:var(--text2);cursor:pointer';
       return '<div style="border-bottom:0.5px solid var(--border)">' +
         '<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--bg3)">' +
           '<span style="font-size:12px;font-weight:700;color:var(--amber);flex:1">' + cat + '</span>' +
           '<span style="font-size:11px;font-family:monospace;color:var(--text2)">' + commas(catTotal) + '원</span>' +
+          (allRcvd ? '<span style="' + catBtnStyle + '">' + catBtnLabel + '</span>' :
+            '<button style="' + catBtnStyle + '" data-cat="' + cat + '" onclick="openCatRecvModal(this)">' + catBtnLabel + ' (' + pendingItems.length + ')</button>') +
         '</div>' +
         itemRows +
       '</div>';
@@ -1198,6 +1206,30 @@ function adjustInlinePrice(sid, delta) {
 
 // 입고날짜 모달용 임시 저장
 let _recvPending = null;
+let _catRecvPending = null; // 카테고리 일괄 입고용
+
+function openCatRecvModal(btn) {
+  const cat = btn.dataset.cat;
+  // allOrders에서 해당 카테고리 미입고 품목 직접 수집
+  _catRecvPending = [];
+  allOrders.forEach(order => {
+    (order.items || []).forEach((item, idx) => {
+      if (item.cat === cat && !item.received) {
+        _catRecvPending.push({
+          key: order.key,
+          month: order.month,
+          idx,
+          sid: safeId(order.key, idx)
+        });
+      }
+    });
+  });
+  if (_catRecvPending.length === 0) { showToast('미입고 품목 없음'); return; }
+  document.getElementById('recv-date-input').value = toDateStr(Date.now());
+  const title = document.querySelector('#recv-date-modal .modal-title');
+  if (title) title.textContent = '📦 ' + cat + ' 일괄 입고 (' + _catRecvPending.length + '건)';
+  openModal('recv-date-modal');
+}
 
 function toggleInlineReceive(key, month, idx) {
   const order = allOrders.find(o => o.key === key && o.month === month);
@@ -1212,6 +1244,14 @@ function toggleInlineReceive(key, month, idx) {
         await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), {
           received: false, actualQty: null, actualPrice: null, receivedAt: null, receivedDateStr: null
         });
+        // 가격이력 마지막 1건 삭제
+        if (item.id && priceHistory[item.id]) {
+          const keys = Object.keys(priceHistory[item.id]);
+          if (keys.length > 0) {
+            const lastKey = keys[keys.length - 1];
+            await window._fn.remove(dbRef('priceHistory/' + item.id + '/' + lastKey));
+          }
+        }
         showToast('입고 취소');
       } catch { showToast('업데이트 실패'); }
     })();
@@ -1230,28 +1270,59 @@ function toggleInlineReceive(key, month, idx) {
 }
 
 async function confirmRecvDate() {
-  if (!_recvPending) return;
-  const { key, month, idx, item, qtyVal, priceVal } = _recvPending;
   const dateStr = document.getElementById('recv-date-input').value;
   if (!dateStr) { showToast('날짜를 선택하세요'); return; }
+  const receivedAt = new Date(dateStr).getTime();
 
-  const updates = {
-    received: true,
-    actualQty: qtyVal,
-    actualPrice: priceVal,
-    receivedAt: new Date(dateStr).getTime(),
-    receivedDateStr: dateStr
-  };
+  // 카테고리 일괄 입고
+  if (_catRecvPending) {
+    const pending = _catRecvPending;
+    _catRecvPending = null;
+    let done = 0;
+    for (const p of pending) {
+      const order = allOrders.find(o => o.key === p.key && o.month === p.month);
+      if (!order) continue;
+      const item = order.items[p.idx];
+      if (!item || item.received) continue;
+      const qtyEl = document.getElementById('rqty-' + p.sid);
+      const priceEl = document.getElementById('rprice-' + p.sid);
+      const qtyVal = parseFloat(qtyEl ? qtyEl.value : item.qty) || item.qty;
+      const priceVal = parseInt(priceEl ? priceEl.value : item.price) || item.price;
+      try {
+        await window._fn.update(dbRef('orders/' + p.month + '/' + p.key + '/items/' + p.idx), {
+          received: true, actualQty: qtyVal, actualPrice: priceVal,
+          receivedAt, receivedDateStr: dateStr
+        });
+        if (priceVal !== item.price) {
+          await recordPrice(item.id || '', priceVal, '실입고 단가');
+          currentPrices[item.id] = priceVal;
+        }
+        done++;
+      } catch { /* 개별 실패는 건너뜀 */ }
+    }
+    // 모달 타이틀 원복
+    const title = document.querySelector('#recv-date-modal .modal-title');
+    if (title) title.textContent = '📦 입고 확인';
+    closeModal('recv-date-modal');
+    showToast(done + '건 입고 완료 ✓');
+    return;
+  }
 
+  // 개별 입고
+  if (!_recvPending) return;
+  const { key, month, idx, item, qtyVal, priceVal } = _recvPending;
+  _recvPending = null;
   try {
-    await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), updates);
+    await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), {
+      received: true, actualQty: qtyVal, actualPrice: priceVal,
+      receivedAt, receivedDateStr: dateStr
+    });
     if (priceVal !== item.price) {
       await recordPrice(item.id || '', priceVal, '실입고 단가');
       currentPrices[item.id] = priceVal;
     }
     closeModal('recv-date-modal');
     showToast('입고 완료 ✓');
-    _recvPending = null;
   } catch { showToast('업데이트 실패'); }
 }
 
@@ -1435,15 +1506,20 @@ function renderStats() {
     to = new Date(document.getElementById('stats-to').value || now);
   }
   const fromTs = from.getTime(), toTs = to.getTime() + 86400000;
-  const filtered = allOrders.filter(o => o.createdAt >= fromTs && o.createdAt < toTs);
-  let totalAmt = 0;
-  const itemMap = {}, catMap = {};
-  filtered.forEach(order => {
+  // 입고완료 품목만 / 입고날짜 기준 필터
+  let totalAmt = 0, totalCnt = 0;
+  const itemMap = {}, catMap = {}, months = {};
+  allOrders.forEach(order => {
     (order.items || []).forEach(item => {
+      if (!item.received) return; // 미입고 제외
+      const dateStr = item.receivedDateStr || order.dateStr;
+      const ts = new Date(dateStr + 'T12:00:00').getTime();
+      if (ts < fromTs || ts >= toTs) return; // 입고날짜 기준 필터
       const qty = item.actualQty != null ? item.actualQty : item.qty;
       const price = item.actualPrice != null ? item.actualPrice : item.price;
       const sub = qty * price;
       totalAmt += sub;
+      totalCnt++;
       if (!itemMap[item.name]) itemMap[item.name] = { amt: 0, qty: 0, unit: item.unit, cat: item.cat };
       itemMap[item.name].amt += sub;
       itemMap[item.name].qty += qty;
@@ -1452,15 +1528,13 @@ function renderStats() {
       if (!catMap[item.cat].items[item.name]) catMap[item.cat].items[item.name] = { amt: 0, qty: 0, unit: item.unit };
       catMap[item.cat].items[item.name].amt += sub;
       catMap[item.cat].items[item.name].qty += qty;
+      // 월별 집계 (입고날짜 기준)
+      const mLabel = `${new Date(dateStr + 'T12:00:00').getMonth() + 1}월`;
+      months[mLabel] = (months[mLabel] || 0) + sub;
     });
   });
   const ranked = Object.entries(itemMap).sort((a, b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
   const maxAmt = ranked[0] ? Math.abs(ranked[0][1].amt) : 1;
-  const months = {};
-  filtered.forEach(o => {
-    const m = `${new Date(o.createdAt).getMonth() + 1}월`;
-    months[m] = (months[m] || 0) + (o.items || []).reduce((s, i) => s + i.qty * i.price, 0);
-  });
   const mKeys = Object.keys(months);
   const mMax = Math.max(...Object.values(months).map(Math.abs), 1);
 
@@ -1507,11 +1581,11 @@ function renderStats() {
 
   el.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">총 발주금액</div><div class="stat-val mono" style="font-size:16px">${commas(totalAmt)}원</div></div>
-      <div class="stat-card"><div class="stat-label">발주 횟수</div><div class="stat-val mono">${filtered.length}건</div></div>
+      <div class="stat-card"><div class="stat-label">총 매입금액</div><div class="stat-val mono" style="font-size:16px">${commas(totalAmt)}원</div></div>
+      <div class="stat-card"><div class="stat-label">입고 건수</div><div class="stat-val mono">${totalCnt}건</div></div>
     </div>
     ${mKeys.length > 1 ? `
-    <div class="sec-hdr">월별 발주</div>
+    <div class="sec-hdr">월별 매입</div>
     <div class="card" style="margin:0 14px 8px;padding:12px">
       ${mKeys.map(m => `<div class="bar-row">
         <div class="bar-label">${m}</div>
