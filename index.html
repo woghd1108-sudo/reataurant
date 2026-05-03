@@ -260,7 +260,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.29</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.30</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -1125,10 +1125,11 @@ function renderHistory() {
 
     return `<div class="date-group">
       <div class="date-group-hdr open" id="${groupId}-hdr" onclick="toggleDateGroup('${groupId}')">
-        <span style="font-size:13px;font-weight:700;color:var(--cream);flex:1">
-          ${dateLabel}<span style="font-size:11px;font-weight:400;color:var(--green)">${recvLabel}</span>
-        </span>
-        <span class="text-xs mono" style="color:var(--amber-light)">${dayOrders.length}건 · ${dayTotalLabel}</span>
+        <div style="flex:1;min-width:0">
+          <span style="font-size:13px;font-weight:700;color:var(--cream)">${dateLabel}</span>
+          ${recvLabel ? `<span style="font-size:11px;font-weight:400;color:var(--green);white-space:nowrap"> ${recvLabel}</span>` : ''}
+        </div>
+        <span class="text-xs mono" style="color:var(--amber-light);white-space:nowrap">${dayOrders.length}건 · ${dayTotalLabel}</span>
         ${badge}
         <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteDateGroup('${date}')" style="font-size:10px;padding:0 6px;height:20px;border-color:rgba(226,75,74,.5)">전체삭제</button>
         <svg id="${groupId}-arr" viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#888;flex-shrink:0;transition:transform .2s;transform:rotate(180deg)">
@@ -1136,6 +1137,7 @@ function renderHistory() {
         </svg>
       </div>
       <div class="date-group-body open" id="${groupId}-body">
+        ${catSummary}
         <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px;background:var(--bg3)">
           <button class="btn btn-ghost btn-xs" onclick="openDayShareModal('${date}')">공유</button>
           <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal()">+ 추가</button>
