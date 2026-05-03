@@ -260,7 +260,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.27</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.29</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -1055,6 +1055,7 @@ function renderHistory() {
         return '<div style="padding:10px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'rgba(29,158,117,0.04)' : 'var(--bg2)') + '">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
             '<span style="font-size:13px;font-weight:500;flex:1;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + escHtml(item.name) + '</span>' +
+            (!rcvd ? '<button onclick="deleteOrderItem(\'' + item.orderKey + '\',\'' + item.orderMonth + '\',' + item.itemIdx + ')" style="width:22px;height:22px;border-radius:50%;border:none;background:rgba(226,75,74,0.15);color:var(--red);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">×</button>' : '') +
             (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);background:rgba(29,158,117,0.12);padding:2px 6px;border-radius:10px">' + item.receivedDateStr.slice(5).replace('-','/') + ' 입고</span>' : '') +
             '<button style="' + chkStyle + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" onclick="toggleInlineReceive(this.dataset.key,this.dataset.month,+this.dataset.idx)">' +
               (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="13" height="13"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
@@ -1135,7 +1136,6 @@ function renderHistory() {
         </svg>
       </div>
       <div class="date-group-body open" id="${groupId}-body">
-        ${catSummary}
         <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px;background:var(--bg3)">
           <button class="btn btn-ghost btn-xs" onclick="openDayShareModal('${date}')">공유</button>
           <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal()">+ 추가</button>
@@ -1375,6 +1375,24 @@ function openDayShareModal(date) {
     <button onclick="copyText(${JSON.stringify(txt)})" style="width:100%;padding:12px;border-radius:var(--r2);border:0.5px solid var(--border2);background:var(--bg3);font-size:13px;cursor:pointer;color:var(--text2)">📋 전체 다시 복사</button>
   `;
   openModal('share-modal');
+}
+
+async function deleteOrderItem(key, month, idx) {
+  if (!await customConfirm('이 품목을 발주에서 삭제할까요?', '품목 삭제')) return;
+  const order = allOrders.find(o => o.key === key && o.month === month);
+  if (!order) return;
+  const items = [...(order.items || [])];
+  items.splice(idx, 1);
+  try {
+    if (items.length === 0) {
+      // 품목이 하나도 없으면 발주 자체 삭제
+      await window._fn.remove(dbRef('orders/' + month + '/' + key));
+      showToast('발주 삭제됨');
+    } else {
+      await window._fn.update(dbRef('orders/' + month + '/' + key), { items });
+      showToast('품목 삭제됨');
+    }
+  } catch { showToast('삭제 실패'); }
 }
 
 async function deleteDateGroup(date) {
