@@ -260,7 +260,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.30</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.31</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -756,22 +756,17 @@ function setCatFromDropdown(c) {
   setCat(c);
 }
 
-// input 클릭 시 숫자패드
+// 클릭 이벤트: 숫자패드 열기 + 카테고리 드롭다운 닫기
 document.addEventListener('click', function(e) {
+  // 숫자패드 입력 필드 클릭
   const inp = e.target.closest('input[data-nptype]');
   if (inp) {
-    const nptype = inp.dataset.nptype;
-    const sid = inp.dataset.sid;
-    const unit = inp.dataset.unit;
+    const { nptype, sid, unit, name } = inp.dataset;
     const val = parseFloat(inp.dataset.val) || parseFloat(inp.value) || 0;
-    const name = inp.dataset.name || '';
     const inputId = (nptype === 'receiveQty' ? 'rqty-' : 'rprice-') + sid;
     openNpReceive(inputId, nptype, name + (nptype === 'receiveQty' ? ' 수량' : ' 단가'), unit, val);
   }
-});
-
-// 외부 클릭시 드롭다운 닫기
-document.addEventListener('click', () => {
+  // 카테고리 드롭다운 닫기
   const menu = document.getElementById('cat-dropdown-menu');
   if (menu) menu.classList.remove('open');
 });
@@ -794,18 +789,17 @@ function renderItemList() {
       const qty = currentQty[item.id] || 0;
       const price = currentPrices[item.id] !== undefined ? currentPrices[item.id] : item.defaultPrice;
       const isNeg = price < 0;
-      const isRefund = isNeg;
       html += `
-        <div class="item-row ${qty > 0 ? (isRefund ? 'is-refund' : 'has-qty') : ''}" id="irow-${item.id}">
+        <div class="item-row ${qty > 0 ? (isNeg ? 'is-refund' : 'has-qty') : ''}" id="irow-${item.id}">
           <div class="item-info">
-            <div class="item-name">${escHtml(item.name)}${isRefund ? ' <span style="font-size:10px;color:var(--green);font-weight:600">환급</span>' : ''}${item.isMeat ? ' <span class="badge badge-amber" style="font-size:9px">육류</span>' : ''}</div>
+            <div class="item-name">${escHtml(item.name)}${isNeg ? ' <span style="font-size:10px;color:var(--green);font-weight:600">환급</span>' : ''}${item.isMeat ? ' <span class="badge badge-amber" style="font-size:9px">육류</span>' : ''}</div>
             <div class="item-meta">
               <span class="text3 text-xs">${escHtml(item.unit)}</span>
             </div>
           </div>
           <div class="qty-ctrl">
             <button class="qbtn" onclick="changeQty('${item.id}',-1)">−</button>
-            <div class="qty-val ${qty > 0 ? (isRefund ? 'negative-val' : 'has-val') : ''} qnum" onclick="openNpQty('${item.id}')">${qty > 0 ? qty : '-'}</div>
+            <div class="qty-val ${qty > 0 ? (isNeg ? 'negative-val' : 'has-val') : ''} qnum" onclick="openNpQty('${item.id}')">${qty > 0 ? qty : '-'}</div>
             <button class="qbtn" onclick="changeQty('${item.id}',1)">+</button>
           </div>
         </div>`;
@@ -942,8 +936,8 @@ function openShareModal(order) {
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">카테고리별 문자 발송</div>
     ${cats.map(cat => {
       const catContact = catPhones[cat] || {};
-    const phone = typeof catContact === 'string' ? catContact : (catContact.phone || '');
-    const url = typeof catContact === 'object' ? (catContact.url || '') : '';
+      const phone = typeof catContact === 'string' ? catContact : (catContact.phone || '');
+      const url = typeof catContact === 'object' ? (catContact.url || '') : '';
       const smsText = makeCatSmsText(cat, catMap[cat]);
       const smsHref = phone ? `sms:${phone}?body=${encodeURIComponent(smsText)}` : `sms:?body=${encodeURIComponent(smsText)}`;
       let btns = '';
@@ -1160,13 +1154,6 @@ function toggleDateGroup(groupId) {
   if (arr) arr.style.transform = open ? 'rotate(180deg)' : '';
 }
 
-function toggleOrderCard(key, month) {
-  const body = document.getElementById('obody-' + key);
-  const arr = document.getElementById('oarr-' + key);
-  const open = body.classList.toggle('open');
-  if (arr) arr.style.transform = open ? 'rotate(180deg)' : '';
-}
-
 
 // 인라인 입고확인 함수들
 function safeId(key, idx) {
@@ -1175,7 +1162,7 @@ function safeId(key, idx) {
 
 function adjustInlinePrice(sid, delta) {
   const el = document.getElementById('rprice-' + sid);
-  if (!el) { console.log('못찾음: rprice-' + sid); return; }
+  if (!el) return;
   el.value = Math.max(0, (parseInt(el.value) || 0) + parseInt(delta));
 }
 
@@ -1410,24 +1397,6 @@ async function deleteDateGroup(date) {
   } catch (e) { showToast('삭제 실패'); }
 }
 
-async function deleteOrder(key, month) {
-  if (!await customConfirm('발주 내역을 삭제할까요?', '발주 삭제')) return;
-  try {
-    // 발주 데이터 삭제
-    const order = allOrders.find(o => o.key === key);
-    await window._fn.remove(dbRef('orders/' + month + '/' + key));
-    // 구버전 경로도 시도
-    await window._fn.remove(dbRef('orders/' + key)).catch(() => {});
-    showToast('삭제됨');
-  } catch (e) { showToast('삭제 실패'); }
-}
-
-function openShareByKey(key, month) {
-  const order = allOrders.find(o => o.key === key && o.month === month);
-  if (!order) return;
-  openShareModal(order);
-}
-
 // ══════════════════════════════════════════
 // 통계 탭
 // ══════════════════════════════════════════
@@ -1570,9 +1539,6 @@ function renderStats() {
   }
 }
 
-// ══════════════════════════════════════════
-// 가격변동 탭
-// ══════════════════════════════════════════
 // ══════════════════════════════════════════
 // 카탈로그 관리
 // ══════════════════════════════════════════
