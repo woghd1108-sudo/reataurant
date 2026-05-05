@@ -260,7 +260,7 @@ label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px;}
 <!-- 헤더 -->
 <div id="hdr">
   <div id="hdr-left">
-    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.31</span></h1>
+    <h1>🍖 식자재 발주관리 <span style="font-size:10px;color:#555;font-weight:400">v1.33</span></h1>
     <div class="sub" id="hdr-date"></div>
   </div>
   <div id="hdr-right">
@@ -974,6 +974,187 @@ function setHistFilter(el, days) {
   renderHistory();
 }
 
+// ══════════════════════════════════════════
+// 발주내역 렌더링 (renderHistory + 헬퍼들)
+// ══════════════════════════════════════════
+// 구조:
+//   renderHistory()           - 진입점 (필터링/그룹화)
+//     └ _renderHistDateGroup() - 한 날짜 그룹
+//         └ _buildHistCatMap() - 카테고리별 매핑
+//         └ _renderHistCatBlock() - 카테고리 블록
+//             └ _renderHistItemRow() - 품목 한 줄
+
+// 그날 발주들을 카테고리별로 매핑 (각 발주 독립 추적)
+function _buildHistCatMap(dayOrders) {
+  const catMap = {};
+  dayOrders.forEach(order => {
+    (order.items || []).forEach((item, idx) => {
+      if (!catMap[item.cat]) catMap[item.cat] = [];
+      catMap[item.cat].push({
+        id: item.id, name: item.name, unit: item.unit, qty: item.qty,
+        price: item.price, received: item.received,
+        actualQty: item.actualQty, actualPrice: item.actualPrice,
+        receivedDateStr: item.receivedDateStr,
+        orderKey: order.key, orderMonth: order.month,
+        itemIdx: idx
+      });
+    });
+  });
+  return catMap;
+}
+
+// 품목 한 줄 (수량/단가 input + 입고 체크 + 삭제 버튼)
+function _renderHistItemRow(item) {
+  const actualQty = item.actualQty != null ? item.actualQty : item.qty;
+  const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
+  const rcvd = item.received;
+  const sid = safeId(item.orderKey, item.itemIdx);
+  const chkStyle = 'width:28px;height:28px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
+
+  return '<div style="padding:10px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'rgba(29,158,117,0.04)' : 'var(--bg2)') + '">' +
+    // 1행: 품목명 + 삭제버튼 + 입고날짜배지 + 입고체크
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+      '<span style="font-size:13px;font-weight:500;flex:1;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + escHtml(item.name) + '</span>' +
+      (!rcvd ? '<button onclick="deleteOrderItem(\'' + item.orderKey + '\',\'' + item.orderMonth + '\',' + item.itemIdx + ')" style="width:22px;height:22px;border-radius:50%;border:none;background:rgba(226,75,74,0.15);color:var(--red);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">×</button>' : '') +
+      (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);background:rgba(29,158,117,0.12);padding:2px 6px;border-radius:10px;cursor:pointer" onclick="openEditRecvDate(\'' + item.orderKey + '\',\'' + item.orderMonth + '\',' + item.itemIdx + ')">' + item.receivedDateStr.slice(5).replace('-','/') + ' 입고 ✏</span>' : '') +
+      '<button style="' + chkStyle + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" onclick="toggleInlineReceive(this.dataset.key,this.dataset.month,+this.dataset.idx)">' +
+        (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="13" height="13"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
+      '</button>' +
+    '</div>' +
+    // 2행: 수량 input + 단가 ±500 버튼 + 단가 input
+    '<div style="display:flex;align-items:center;gap:8px">' +
+      '<div style="display:flex;align-items:center;gap:4px;flex:1">' +
+        '<span style="font-size:11px;color:var(--text3);white-space:nowrap">수량</span>' +
+        '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:56px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px;cursor:pointer" id="rqty-' + sid + '" readonly data-nptype="receiveQty" data-sid="' + sid + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" data-unit="' + escHtml(item.unit) + '" data-val="' + actualQty + '" data-name="' + escHtml(item.name) + '">' +
+        '<span style="font-size:11px;color:var(--text3)">' + escHtml(item.unit) + '</span>' +
+      '</div>' +
+      '<div style="width:0.5px;height:20px;background:var(--border)"></div>' +
+      '<div style="display:flex;align-items:center;gap:4px;flex:1.4">' +
+        '<span style="font-size:11px;color:var(--text3);white-space:nowrap">단가</span>' +
+        '<button style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
+        '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:52px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px;cursor:pointer" id="rprice-' + sid + '" readonly data-nptype="receivePrice" data-sid="' + sid + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" data-unit="원" data-val="' + actualPrice + '" data-name="' + escHtml(item.name) + '">' +
+        '<button style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;color:var(--amber);cursor:pointer;display:flex;align-items:center;justify-content:center" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+// 카테고리 블록 (헤더 + 합계 + 일괄입고 버튼 + 품목들)
+function _renderHistCatBlock(catEntry, catIdx, date) {
+  const cat = catEntry[0];
+  const items = catEntry[1];
+  const catTotal = items.reduce(function(s, i) {
+    const qty = i.actualQty != null ? i.actualQty : i.qty;
+    const price = i.actualPrice != null ? i.actualPrice : i.price;
+    return s + qty * price;
+  }, 0);
+
+  const itemRows = items.map(_renderHistItemRow).join('');
+
+  const allRcvd = items.every(i => i.received);
+  const pendingItems = items.filter(i => !i.received);
+  const catBtnStyle = allRcvd
+    ? 'font-size:11px;padding:3px 8px;border-radius:12px;border:none;background:rgba(29,158,117,.15);color:var(--green);cursor:default'
+    : 'font-size:11px;padding:3px 8px;border-radius:12px;border:0.5px solid var(--border2);background:var(--bg4);color:var(--text2);cursor:pointer';
+
+  // 인덱스 기반 id (한글 카테고리명 id 충돌 방지)
+  const catBodyId = 'cb-' + date.replace(/-/g,'') + '-' + catIdx;
+  const catTotalId = 'ct-' + date.replace(/-/g,'') + '-' + catIdx;
+  const isCatCollapsed = histCollapsedCats.has(catBodyId);
+
+  return '<div style="border-bottom:0.5px solid var(--border)">' +
+    // 헤더
+    '<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:' + (allRcvd ? 'rgba(29,158,117,0.06)' : 'var(--bg3)') + ';cursor:pointer" onclick="toggleHistCat(\'' + catBodyId + '\')">' +
+      '<span style="font-size:12px;font-weight:700;color:' + (allRcvd ? 'var(--green)' : 'var(--amber)') + ';flex:1">' + escHtml(cat) + '</span>' +
+      '<span id="' + catTotalId + '" data-cat="' + escAttr(cat) + '" data-date="' + date + '" style="font-size:11px;font-family:monospace;color:var(--text2)">' + commas(catTotal) + '원</span>' +
+      (allRcvd ? '<span style="' + catBtnStyle + '">✓ 완료</span>' :
+        '<button style="' + catBtnStyle + '" data-cat="' + escAttr(cat) + '" data-date="' + date + '" onclick="event.stopPropagation();openCatRecvModal(this)">입고완료 (' + pendingItems.length + ')</button>') +
+      '<svg viewBox="0 0 20 20" fill="currentColor" style="width:13px;height:13px;color:#888;flex-shrink:0;transition:transform .2s;transform:' + (isCatCollapsed ? '' : 'rotate(180deg)') + '"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>' +
+    '</div>' +
+    // 펼침 영역
+    '<div id="' + catBodyId + '"' + (isCatCollapsed ? ' style="display:none"' : '') + '>' +
+      itemRows +
+    '</div>' +
+  '</div>';
+}
+
+// 한 날짜 그룹 전체 (헤더 + 카테고리들 + 하단 버튼)
+function _renderHistDateGroup(date, dayOrders) {
+  // 입고된 항목만 합산
+  const dayTotal = dayOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => {
+    if (!i.received) return ss;
+    const qty = i.actualQty != null ? i.actualQty : i.qty;
+    const price = i.actualPrice != null ? i.actualPrice : i.price;
+    return ss + qty * price;
+  }, 0), 0);
+  const dayTotalLabel = dayTotal > 0 ? commas(dayTotal) + '원' : '-';
+  const groupId = 'dg-' + date.replace(/-/g, '');
+
+  // 카테고리별 매핑
+  const catMap = _buildHistCatMap(dayOrders);
+  const totalItems = Object.values(catMap).reduce((s, items) => s + items.length, 0);
+  const pendingCount = Object.values(catMap).flat().filter(i => !i.received).length;
+  const allRecv = pendingCount === 0 && totalItems > 0;
+  const badge = allRecv
+    ? '<span class="badge badge-green">입고완료</span>'
+    : pendingCount > 0
+      ? `<span class="badge badge-gray" style="font-size:10px">대기 ${pendingCount}</span>`
+      : '';
+
+  // 카테고리들을 미입고/입고완료 그룹으로 분리
+  const catEntries = Object.entries(catMap);
+  const pendingCats = catEntries.filter(([, items]) => !items.every(i => i.received));
+  const doneCats = catEntries.filter(([, items]) => items.every(i => i.received));
+
+  let catSummary = pendingCats.map(entry => _renderHistCatBlock(entry, catEntries.indexOf(entry), date)).join('');
+  if (doneCats.length > 0) {
+    catSummary += '<div style="padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border);border-top:1.5px solid rgba(29,158,117,0.3)">' +
+      '<span style="font-size:11px;color:var(--green);font-weight:600">✓ 입고완료 (' + doneCats.length + ')</span>' +
+    '</div>';
+    catSummary += doneCats.map(entry => _renderHistCatBlock(entry, catEntries.indexOf(entry), date)).join('');
+  }
+
+  // 날짜 라벨 ("5/3 (월)")
+  const [, m, d2] = date.split('-');
+  const dateObj = new Date(date + 'T12:00:00');
+  const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
+  const dateLabel = `${parseInt(m)}/${parseInt(d2)} (${dayName})`;
+
+  // 입고날짜 모음 ("→ 입고 05/04, 05/05")
+  const recvDates = [...new Set(
+    dayOrders.flatMap(o => (o.items || [])
+      .filter(i => i.received && i.receivedDateStr)
+      .map(i => i.receivedDateStr)
+    )
+  )].sort();
+  const recvLabel = recvDates.length > 0
+    ? ' → 입고 ' + recvDates.map(d => d.slice(5).replace('-','/')).join(', ')
+    : '';
+
+  return `<div class="date-group">
+    <div class="date-group-hdr open" id="${groupId}-hdr" onclick="toggleDateGroup('${groupId}')">
+      <div style="flex:1;min-width:0">
+        <span style="font-size:13px;font-weight:700;color:var(--cream)">${dateLabel}</span>
+        ${recvLabel ? `<span style="font-size:11px;font-weight:400;color:var(--green);white-space:nowrap"> ${recvLabel}</span>` : ''}
+      </div>
+      <span class="text-xs mono" style="color:var(--amber-light);white-space:nowrap">${dayOrders.length}건 · ${dayTotalLabel}</span>
+      ${badge}
+      <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteDateGroup('${date}')" style="font-size:10px;padding:0 6px;height:20px;border-color:rgba(226,75,74,.5)">전체삭제</button>
+      <svg id="${groupId}-arr" viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#888;flex-shrink:0;transition:transform .2s;transform:rotate(180deg)">
+        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+      </svg>
+    </div>
+    <div class="date-group-body open" id="${groupId}-body">
+      ${catSummary}
+      <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px;background:var(--bg3)">
+        <button class="btn btn-ghost btn-xs" onclick="openDayShareModal('${date}')">공유</button>
+        <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal()">+ 추가</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 진입점: 필터링 + 날짜별 그룹화 + 렌더링
 function renderHistory() {
   const el = document.getElementById('history-list');
   const search = (document.getElementById('hist-search').value || '').toLowerCase();
@@ -987,158 +1168,16 @@ function renderHistory() {
     return;
   }
 
-  // 날짜별로 그룹핑
+  // 날짜별 그룹핑
   const byDate = {};
   orders.forEach(o => {
     const d = toDateStr(o.createdAt);
     (byDate[d] = byDate[d] || []).push(o);
   });
 
-  el.innerHTML = Object.entries(byDate).map(([date, dayOrders]) => {
-    const dayTotal = dayOrders.reduce((s, o) => s + (o.items || []).reduce((ss, i) => {
-      if (!i.received) return ss; // 미입고 제외
-      const qty = i.actualQty != null ? i.actualQty : i.qty;
-      const price = i.actualPrice != null ? i.actualPrice : i.price;
-      return ss + qty * price;
-    }, 0), 0);
-    const dayTotalLabel = dayTotal > 0 ? commas(dayTotal) + '원' : '-';
-    const groupId = 'dg-' + date.replace(/-/g, '');
-
-    // 그날 모든 발주의 품목을 카테고리별로 합치기
-    const catMap = {};
-    dayOrders.forEach(order => {
-      (order.items || []).forEach((item, idx) => {
-        if (!catMap[item.cat]) catMap[item.cat] = [];
-        // 합산 NO - 각 발주를 독립적으로 추적
-        catMap[item.cat].push({
-          id: item.id, name: item.name, unit: item.unit, qty: item.qty,
-          price: item.price, received: item.received,
-          actualQty: item.actualQty, actualPrice: item.actualPrice,
-          receivedDateStr: item.receivedDateStr,
-          orderKey: order.key, orderMonth: order.month,
-          itemIdx: idx
-        });
-      });
-    });
-
-    const totalItems = Object.values(catMap).reduce((s, items) => s + items.length, 0);
-    const pendingItems = Object.values(catMap).flat().filter(i => !i.received).length;
-    const allRecv = pendingItems === 0 && totalItems > 0;
-    const badge = allRecv
-      ? '<span class="badge badge-green">입고완료</span>'
-      : pendingItems > 0
-        ? `<span class="badge badge-gray" style="font-size:10px">대기 ${pendingItems}</span>`
-        : '';
-
-    // 카테고리별 품목 목록
-    const renderCatBlock = function(catEntry) {
-      const cat = catEntry[0];
-      const items = catEntry[1];
-      const catTotal = items.reduce(function(s, i) {
-        const qty = i.actualQty != null ? i.actualQty : i.qty;
-        const price = i.actualPrice != null ? i.actualPrice : i.price;
-        return s + qty * price;
-      }, 0);
-
-      const itemRows = items.map(function(item) {
-        const actualQty = item.actualQty != null ? item.actualQty : item.qty;
-        const actualPrice = item.actualPrice != null ? item.actualPrice : item.price;
-        const rcvd = item.received;
-        const sid = safeId(item.orderKey, item.itemIdx);
-        const chkStyle = 'width:28px;height:28px;border-radius:50%;border:1.5px solid ' + (rcvd ? 'var(--green)' : 'var(--border2)') + ';background:' + (rcvd ? 'var(--green)' : 'none') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
-        return '<div style="padding:10px 12px;border-bottom:0.5px solid var(--border);background:' + (rcvd ? 'rgba(29,158,117,0.04)' : 'var(--bg2)') + '">' +
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
-            '<span style="font-size:13px;font-weight:500;flex:1;' + (rcvd ? 'text-decoration:line-through;color:var(--text3)' : '') + '">' + escHtml(item.name) + '</span>' +
-            (!rcvd ? '<button onclick="deleteOrderItem(\'' + item.orderKey + '\',\'' + item.orderMonth + '\',' + item.itemIdx + ')" style="width:22px;height:22px;border-radius:50%;border:none;background:rgba(226,75,74,0.15);color:var(--red);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">×</button>' : '') +
-            (rcvd && item.receivedDateStr ? '<span style="font-size:10px;color:var(--green);background:rgba(29,158,117,0.12);padding:2px 6px;border-radius:10px">' + item.receivedDateStr.slice(5).replace('-','/') + ' 입고</span>' : '') +
-            '<button style="' + chkStyle + '" data-key="' + item.orderKey + '" data-month="' + item.orderMonth + '" data-idx="' + item.itemIdx + '" onclick="toggleInlineReceive(this.dataset.key,this.dataset.month,+this.dataset.idx)">' +
-              (rcvd ? '<svg viewBox="0 0 20 20" fill="white" width="13" height="13"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>' : '') +
-            '</button>' +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:8px">' +
-            '<div style="display:flex;align-items:center;gap:4px;flex:1">' +
-              '<span style="font-size:11px;color:var(--text3);white-space:nowrap">수량</span>' +
-              '<input type="number" inputmode="decimal" value="' + actualQty + '" step="0.01" style="width:56px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px;cursor:pointer" id="rqty-' + sid + '" readonly data-nptype="receiveQty" data-sid="' + sid + '" data-unit="' + escHtml(item.unit) + '" data-val="' + actualQty + '" data-name="' + escHtml(item.name) + '">' +
-              '<span style="font-size:11px;color:var(--text3)">' + escHtml(item.unit) + '</span>' +
-            '</div>' +
-            '<div style="width:0.5px;height:20px;background:var(--border)"></div>' +
-            '<div style="display:flex;align-items:center;gap:4px;flex:1.4">' +
-              '<span style="font-size:11px;color:var(--text3);white-space:nowrap">단가</span>' +
-              '<button style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center" data-sid="' + sid + '" data-delta="-500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">−</button>' +
-              '<input type="number" inputmode="numeric" value="' + actualPrice + '" style="flex:1;min-width:52px;font-size:13px;padding:5px 6px;text-align:center;border-radius:6px;cursor:pointer" id="rprice-' + sid + '" readonly data-nptype="receivePrice" data-sid="' + sid + '" data-unit="원" data-val="' + actualPrice + '" data-name="' + escHtml(item.name) + '">' +
-              '<button style="width:28px;height:28px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg3);font-size:14px;color:var(--amber);cursor:pointer;display:flex;align-items:center;justify-content:center" data-sid="' + sid + '" data-delta="500" onclick="adjustInlinePrice(this.dataset.sid,this.dataset.delta)">+</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-      }).join('');
-
-      const allRcvd = items.every(i => i.received);
-      const pendingItems = items.filter(i => !i.received);
-      const catBtnStyle = allRcvd
-        ? 'font-size:11px;padding:3px 8px;border-radius:12px;border:none;background:rgba(29,158,117,.15);color:var(--green);cursor:default'
-        : 'font-size:11px;padding:3px 8px;border-radius:12px;border:0.5px solid var(--border2);background:var(--bg4);color:var(--text2);cursor:pointer';
-      return '<div style="border-bottom:0.5px solid var(--border)">' +
-        '<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;background:' + (allRcvd ? 'rgba(29,158,117,0.06)' : 'var(--bg3)') + '">' +
-          '<span style="font-size:12px;font-weight:700;color:' + (allRcvd ? 'var(--green)' : 'var(--amber)') + ';flex:1">' + escHtml(cat) + '</span>' +
-          '<span style="font-size:11px;font-family:monospace;color:var(--text2)">' + commas(catTotal) + '원</span>' +
-          (allRcvd ? '<span style="' + catBtnStyle + '">✓ 완료</span>' :
-            '<button style="' + catBtnStyle + '" data-cat="' + escAttr(cat) + '" data-date="' + date + '" onclick="openCatRecvModal(this)">입고완료 (' + pendingItems.length + ')</button>') +
-        '</div>' +
-        itemRows +
-      '</div>';
-    };
-
-    const catEntries = Object.entries(catMap);
-    const pendingCats = catEntries.filter(([, items]) => !items.every(i => i.received));
-    const doneCats = catEntries.filter(([, items]) => items.every(i => i.received));
-
-    let catSummary = pendingCats.map(renderCatBlock).join('');
-    if (doneCats.length > 0) {
-      catSummary += '<div style="padding:6px 12px;background:var(--bg3);border-bottom:0.5px solid var(--border);border-top:1.5px solid rgba(29,158,117,0.3)">' +
-        '<span style="font-size:11px;color:var(--green);font-weight:600">✓ 입고완료 (' + doneCats.length + ')</span>' +
-      '</div>';
-      catSummary += doneCats.map(renderCatBlock).join('');
-    }
-
-    // 날짜 포맷
-    const [y, m, d2] = date.split('-');
-    const dateObj = new Date(date + 'T12:00:00');
-    const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
-    const dateLabel = `${parseInt(m)}/${parseInt(d2)} (${dayName})`;
-
-    // 입고날짜 수집 (입고완료된 항목들의 receivedDateStr)
-    const recvDates = [...new Set(
-      dayOrders.flatMap(o => (o.items || [])
-        .filter(i => i.received && i.receivedDateStr)
-        .map(i => i.receivedDateStr)
-      )
-    )].sort();
-    const recvLabel = recvDates.length > 0
-      ? ' → 입고 ' + recvDates.map(d => d.slice(5).replace('-','/')).join(', ')
-      : '';
-
-    return `<div class="date-group">
-      <div class="date-group-hdr open" id="${groupId}-hdr" onclick="toggleDateGroup('${groupId}')">
-        <div style="flex:1;min-width:0">
-          <span style="font-size:13px;font-weight:700;color:var(--cream)">${dateLabel}</span>
-          ${recvLabel ? `<span style="font-size:11px;font-weight:400;color:var(--green);white-space:nowrap"> ${recvLabel}</span>` : ''}
-        </div>
-        <span class="text-xs mono" style="color:var(--amber-light);white-space:nowrap">${dayOrders.length}건 · ${dayTotalLabel}</span>
-        ${badge}
-        <button class="btn btn-danger btn-xs" onclick="event.stopPropagation();deleteDateGroup('${date}')" style="font-size:10px;padding:0 6px;height:20px;border-color:rgba(226,75,74,.5)">전체삭제</button>
-        <svg id="${groupId}-arr" viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:#888;flex-shrink:0;transition:transform .2s;transform:rotate(180deg)">
-          <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
-        </svg>
-      </div>
-      <div class="date-group-body open" id="${groupId}-body">
-        ${catSummary}
-        <div style="padding:8px 12px;display:flex;justify-content:flex-end;gap:6px;background:var(--bg3)">
-          <button class="btn btn-ghost btn-xs" onclick="openDayShareModal('${date}')">공유</button>
-          <button class="btn btn-ghost btn-xs" onclick="openPastOrderModal()">+ 추가</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+  el.innerHTML = Object.entries(byDate)
+    .map(([date, dayOrders]) => _renderHistDateGroup(date, dayOrders))
+    .join('');
 
   el.innerHTML += `<div style="padding:0 14px 8px">
     <button class="btn btn-ghost w-full" style="border-style:dashed;height:44px" onclick="openPastOrderModal()">+ 지난 발주 수동 입력</button>
@@ -1164,6 +1203,8 @@ function adjustInlinePrice(sid, delta) {
   const el = document.getElementById('rprice-' + sid);
   if (!el) return;
   el.value = Math.max(0, (parseInt(el.value) || 0) + parseInt(delta));
+  const key = el.dataset.key, month = el.dataset.month, idx = parseInt(el.dataset.idx);
+  if (key && month && !isNaN(idx)) saveInlineValue(key, month, idx);
 }
 
 // 입고날짜 모달용 임시 저장
@@ -1217,18 +1258,33 @@ function toggleInlineReceive(key, month, idx) {
     return;
   }
 
-  // 입고 처리 → 날짜 선택 모달 띄우기
-  const qtyEl = document.getElementById('rqty-' + safeId(key, idx));
-  const priceEl = document.getElementById('rprice-' + safeId(key, idx));
+  // 입고 처리 → 오늘 날짜로 즉시 저장 (모달 없이)
+  const sid = safeId(key, idx);
+  const qtyEl = document.getElementById('rqty-' + sid);
+  const priceEl = document.getElementById('rprice-' + sid);
   const qtyVal = parseFloat(qtyEl ? qtyEl.value : item.qty) || item.qty;
   const priceVal = parseInt(priceEl ? priceEl.value : item.price) || item.price;
+  const dateStr = toDateStr(Date.now());
+  const receivedAt = new Date(dateStr).getTime();
 
-  _recvPending = { key, month, idx, item, qtyVal, priceVal };
-  document.getElementById('recv-date-input').value = toDateStr(Date.now());
-  // 모달 제목 리셋
-  const recvTitle = document.querySelector('#recv-date-modal .modal-title');
-  if (recvTitle) recvTitle.textContent = '📦 입고 확인';
-  openModal('recv-date-modal');
+  (async () => {
+    _isReceiving = true;
+    try {
+      if (item.id) {
+        currentPrices[item.id] = priceVal;
+        await window._fn.update(dbRef('catalog/' + item.id), { defaultPrice: priceVal });
+        const catItem = CATALOG.find(c => c.id === item.id);
+        if (catItem) catItem.defaultPrice = priceVal;
+      }
+      await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), {
+        received: true, actualQty: qtyVal, actualPrice: priceVal,
+        receivedAt, receivedDateStr: dateStr
+      });
+      showToast('입고 완료 ✓');
+    } catch { showToast('업데이트 실패'); }
+    _isReceiving = false;
+    renderHistory();
+  })();
 }
 
 async function confirmRecvDate() {
@@ -1398,6 +1454,86 @@ async function deleteDateGroup(date) {
 }
 
 // ══════════════════════════════════════════
+// 발주내역 카테고리 접기/펼치기
+// ══════════════════════════════════════════
+function toggleHistCat(catBodyId) {
+  const bodyEl = document.getElementById(catBodyId);
+  if (!bodyEl) return;
+  const isCollapsed = histCollapsedCats.has(catBodyId);
+  if (isCollapsed) {
+    histCollapsedCats.delete(catBodyId);
+    bodyEl.style.display = '';
+  } else {
+    histCollapsedCats.add(catBodyId);
+    bodyEl.style.display = 'none';
+  }
+  // 화살표 아이콘 회전
+  const hdr = bodyEl.previousElementSibling;
+  if (hdr) {
+    const svg = hdr.querySelector('svg');
+    if (svg) svg.style.transform = histCollapsedCats.has(catBodyId) ? '' : 'rotate(180deg)';
+  }
+}
+
+// ══════════════════════════════════════════
+// 입고 날짜 수정 (배지 탭 시)
+// ══════════════════════════════════════════
+function openEditRecvDate(key, month, idx) {
+  const order = allOrders.find(o => o.key === key && o.month === month);
+  const item = order ? order.items[idx] : null;
+  if (!item) return;
+  _recvPending = {
+    key, month, idx, item,
+    qtyVal: item.actualQty != null ? item.actualQty : item.qty,
+    priceVal: item.actualPrice != null ? item.actualPrice : item.price
+  };
+  document.getElementById('recv-date-input').value = item.receivedDateStr || toDateStr(Date.now());
+  const recvTitle = document.querySelector('#recv-date-modal .modal-title');
+  if (recvTitle) recvTitle.textContent = '📦 입고 날짜 수정';
+  openModal('recv-date-modal');
+}
+
+// ══════════════════════════════════════════
+// 인라인 수량/단가 즉시 저장 + 카테고리 합계 갱신
+// ══════════════════════════════════════════
+async function saveInlineValue(key, month, idx) {
+  const sid = safeId(key, idx);
+  const qtyEl = document.getElementById('rqty-' + sid);
+  const priceEl = document.getElementById('rprice-' + sid);
+  if (!qtyEl && !priceEl) return;
+  const qtyVal = parseFloat(qtyEl ? qtyEl.value : 0) || 0;
+  const priceVal = parseInt(priceEl ? priceEl.value : 0) || 0;
+  try {
+    await window._fn.update(dbRef('orders/' + month + '/' + key + '/items/' + idx), {
+      actualQty: qtyVal, actualPrice: priceVal
+    });
+    // in-memory 업데이트
+    const order = allOrders.find(o => o.key === key && o.month === month);
+    if (order && order.items[idx]) {
+      order.items[idx].actualQty = qtyVal;
+      order.items[idx].actualPrice = priceVal;
+      const date = toDateStr(order.createdAt);
+      const cat = order.items[idx].cat;
+      // data-cat, data-date 속성으로 합계 요소 탐색 (id 충돌 없음)
+      const catTotalEl = document.querySelector('[data-cat="' + cat.replace(/"/g,'&quot;') + '"][data-date="' + date + '"]');
+      if (catTotalEl) {
+        const dayOrders = allOrders.filter(o => toDateStr(o.createdAt) === date);
+        let total = 0;
+        dayOrders.forEach(o => {
+          (o.items || []).forEach(i => {
+            if (i.cat !== cat) return;
+            const q = i.actualQty != null ? i.actualQty : i.qty;
+            const p = i.actualPrice != null ? i.actualPrice : i.price;
+            total += q * p;
+          });
+        });
+        catTotalEl.textContent = commas(total) + '원';
+      }
+    }
+  } catch { /* 입고 체크 전 임시값 저장 실패는 조용히 */ }
+}
+
+// ══════════════════════════════════════════
 // 통계 탭
 // ══════════════════════════════════════════
 function toggleStatsCat(cat) {
@@ -1415,9 +1551,23 @@ function setStatsFilter(el, period) {
 }
 
 let statsOpenCats = new Set(); // 펼쳐진 카테고리
+let histCollapsedCats = new Set(); // 접힌 카테고리 (발주내역, key = date+'-'+catIdx)
 
-function renderStats() {
-  const el = document.getElementById('stats-content');
+// ══════════════════════════════════════════
+// 통계 렌더링 (renderStats + 헬퍼들)
+// ══════════════════════════════════════════
+// TODO(v1.34): 거래처별 계산서 수취 체크 + 세금계산서 금액 비교 추가
+//   - catMap에 거래처(=cat) 단위로 입고금액 합계 이미 있음 → 활용
+//   - data 추가: settings/invoices/{YYYYMM}/{cat}/{received, amount, date}
+//   - UI: _renderStatsCatSection 안에 "계산서 [✓ 수취] 1,148,000원 (+1,700)" 한 줄
+// 구조:
+//   renderStats()           - 진입점
+//     ├ _calcStatsRange()        - 기간 from/to 계산
+//     ├ _aggregateStatsData()    - 입고데이터 집계
+//     └ _renderStatsCatSection() - 카테고리별 섹션 HTML
+
+// 통계 기간 계산 (이번달/올해/사용자지정)
+function _calcStatsRange() {
   const now = new Date();
   let from, to;
   if (statsPeriod === 'month') {
@@ -1430,8 +1580,11 @@ function renderStats() {
     from = new Date(document.getElementById('stats-from').value || now);
     to = new Date(document.getElementById('stats-to').value || now);
   }
-  const fromTs = from.getTime(), toTs = to.getTime() + 86400000;
-  // 입고완료 품목만 / 입고날짜 기준 필터
+  return { fromTs: from.getTime(), toTs: to.getTime() + 86400000 };
+}
+
+// 입고완료 품목만 집계 (입고날짜 기준)
+function _aggregateStatsData(fromTs, toTs) {
   let totalAmt = 0, totalCnt = 0;
   const itemMap = {}, catMap = {}, months = {};
   allOrders.forEach(order => {
@@ -1439,31 +1592,86 @@ function renderStats() {
       if (!item.received) return; // 미입고 제외
       const dateStr = item.receivedDateStr || order.dateStr;
       const ts = new Date(dateStr + 'T12:00:00').getTime();
-      if (ts < fromTs || ts >= toTs) return; // 입고날짜 기준 필터
+      if (ts < fromTs || ts >= toTs) return;
       const qty = item.actualQty != null ? item.actualQty : item.qty;
       const price = item.actualPrice != null ? item.actualPrice : item.price;
       const sub = qty * price;
       totalAmt += sub;
       totalCnt++;
+      // 품목별 누적
       if (!itemMap[item.name]) itemMap[item.name] = { amt: 0, qty: 0, unit: item.unit, cat: item.cat };
       itemMap[item.name].amt += sub;
       itemMap[item.name].qty += qty;
+      // 카테고리별 누적
       if (!catMap[item.cat]) catMap[item.cat] = { amt: 0, items: {} };
       catMap[item.cat].amt += sub;
       if (!catMap[item.cat].items[item.name]) catMap[item.cat].items[item.name] = { amt: 0, qty: 0, unit: item.unit };
       catMap[item.cat].items[item.name].amt += sub;
       catMap[item.cat].items[item.name].qty += qty;
-      // 월별 집계 (입고날짜 기준)
+      // 월별 집계
       const mLabel = `${new Date(dateStr + 'T12:00:00').getMonth() + 1}월`;
       months[mLabel] = (months[mLabel] || 0) + sub;
     });
   });
+  return { totalAmt, totalCnt, itemMap, catMap, months };
+}
+
+// 카테고리별 섹션 HTML 생성 (펼침/접힘 + 품목 목록)
+function _renderStatsCatSection(catMap, totalAmt) {
+  const catSorted = Object.entries(catMap).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
+  if (catSorted.length === 0) return '<div class="empty-state" style="padding:24px">데이터 없음</div>';
+
+  return catSorted.map(function(catEntry) {
+    const cat = catEntry[0], data = catEntry[1];
+    const pct = Math.round(Math.abs(data.amt) / Math.max(Math.abs(totalAmt), 1) * 100);
+    const isOpen = statsOpenCats.has(cat);
+    const itemsSorted = Object.entries(data.items).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
+    const catMaxAmt = Math.max.apply(null, itemsSorted.map(function(e) { return Math.abs(e[1].amt); }).concat([1]));
+
+    // 카테고리 헤더 (탭 시 펼침)
+    const headerHtml = '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border)" onclick="toggleStatsCat(' + JSON.stringify(cat) + ')">' +
+      '<div style="flex:1">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+          '<span style="font-size:13px;font-weight:700;color:var(--amber)">' + escHtml(cat) + '</span>' +
+          '<span style="font-size:11px;color:var(--text3)">' + pct + '%</span>' +
+        '</div>' +
+        '<div class="bar-wrap"><div class="bar-fill accent" style="width:' + pct + '%"></div></div>' +
+      '</div>' +
+      '<span style="font-size:13px;font-family:monospace;color:var(--text2);white-space:nowrap">' + commas(data.amt) + '원</span>' +
+      '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:var(--text3);flex-shrink:0;transition:transform .2s;transform:' + (isOpen ? 'rotate(180deg)' : '') + '">' +
+        '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>' +
+      '</svg>' +
+    '</div>';
+
+    // 펼친 상태일 때 품목 목록
+    const itemsHtml = !isOpen ? '' : '<div>' + itemsSorted.map(function(iEntry) {
+      const name = iEntry[0], idata = iEntry[1];
+      const ipct = Math.round(Math.abs(idata.amt) / catMaxAmt * 100);
+      const isNeg = idata.amt < 0;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px 8px 20px;border-bottom:0.5px solid var(--border)">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:12px;margin-bottom:3px">' + escHtml(name) + ' <span style="font-size:11px;color:var(--text3)">' + idata.qty.toFixed(1) + escHtml(idata.unit) + '</span></div>' +
+          '<div class="bar-wrap"><div class="bar-fill" style="width:' + ipct + '%;' + (isNeg ? 'background:var(--green)' : '') + '"></div></div>' +
+        '</div>' +
+        '<span style="font-size:12px;font-family:monospace;color:' + (isNeg ? 'var(--green)' : 'var(--text2)') + ';white-space:nowrap">' + commas(idata.amt) + '원</span>' +
+      '</div>';
+    }).join('') + '</div>';
+
+    return '<div>' + headerHtml + itemsHtml + '</div>';
+  }).join('');
+}
+
+// 진입점
+function renderStats() {
+  const el = document.getElementById('stats-content');
+  const { fromTs, toTs } = _calcStatsRange();
+  const { totalAmt, totalCnt, itemMap, catMap, months } = _aggregateStatsData(fromTs, toTs);
   const ranked = Object.entries(itemMap).sort((a, b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
   const maxAmt = ranked[0] ? Math.abs(ranked[0][1].amt) : 1;
   const mKeys = Object.keys(months);
   const mMax = Math.max(...Object.values(months).map(Math.abs), 1);
 
-  // ★ 1단계: el.innerHTML 먼저 (stats-cat-section div 생성)
+  // 1단계: el.innerHTML 먼저 (stats-cat-section div 생성)
   el.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-label">총 매입금액</div><div class="stat-val mono" style="font-size:16px">${commas(totalAmt)}원</div></div>
@@ -1497,46 +1705,9 @@ function renderStats() {
     </div>
   `;
 
-  // ★ 2단계: 그 다음 stats-cat-section 채움
+  // 2단계: 카테고리별 섹션 채우기
   const catSec = document.getElementById('stats-cat-section');
-  if (catSec) {
-    const catSorted = Object.entries(catMap).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
-    catSec.innerHTML = catSorted.length === 0 ? '<div class="empty-state" style="padding:24px">데이터 없음</div>' :
-      catSorted.map(function(catEntry) {
-        const cat = catEntry[0], data = catEntry[1];
-        const pct = Math.round(Math.abs(data.amt) / Math.max(Math.abs(totalAmt), 1) * 100);
-        const isOpen = statsOpenCats.has(cat);
-        const itemsSorted = Object.entries(data.items).sort((a,b) => Math.abs(b[1].amt) - Math.abs(a[1].amt));
-        const catMaxAmt = Math.max.apply(null, itemsSorted.map(function(e) { return Math.abs(e[1].amt); }).concat([1]));
-        return '<div>' +
-          '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border)" onclick="toggleStatsCat(' + JSON.stringify(cat) + ')">' +
-            '<div style="flex:1">' +
-              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-                '<span style="font-size:13px;font-weight:700;color:var(--amber)">' + escHtml(cat) + '</span>' +
-                '<span style="font-size:11px;color:var(--text3)">' + pct + '%</span>' +
-              '</div>' +
-              '<div class="bar-wrap"><div class="bar-fill accent" style="width:' + pct + '%"></div></div>' +
-            '</div>' +
-            '<span style="font-size:13px;font-family:monospace;color:var(--text2);white-space:nowrap">' + commas(data.amt) + '원</span>' +
-            '<svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px;color:var(--text3);flex-shrink:0;transition:transform .2s;transform:' + (isOpen ? 'rotate(180deg)' : '') + '">' +
-              '<path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>' +
-            '</svg>' +
-          '</div>' +
-          (isOpen ? '<div>' + itemsSorted.map(function(iEntry) {
-            const name = iEntry[0], idata = iEntry[1];
-            const ipct = Math.round(Math.abs(idata.amt) / catMaxAmt * 100);
-            const isNeg = idata.amt < 0;
-            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px 8px 20px;border-bottom:0.5px solid var(--border)">' +
-              '<div style="flex:1">' +
-                '<div style="font-size:12px;margin-bottom:3px">' + escHtml(name) + ' <span style="font-size:11px;color:var(--text3)">' + idata.qty.toFixed(1) + escHtml(idata.unit) + '</span></div>' +
-                '<div class="bar-wrap"><div class="bar-fill" style="width:' + ipct + '%;' + (isNeg ? 'background:var(--green)' : '') + '"></div></div>' +
-              '</div>' +
-              '<span style="font-size:12px;font-family:monospace;color:' + (isNeg ? 'var(--green)' : 'var(--text2)') + ';white-space:nowrap">' + commas(idata.amt) + '원</span>' +
-            '</div>';
-          }).join('') + '</div>' : '') +
-        '</div>';
-      }).join('');
-  }
+  if (catSec) catSec.innerHTML = _renderStatsCatSection(catMap, totalAmt);
 }
 
 // ══════════════════════════════════════════
@@ -1993,7 +2164,11 @@ function npConfirm() {
     updateOrderCount();
   } else if (npTarget.type === 'receiveQty' || npTarget.type === 'receivePrice') {
     const el = document.getElementById(npTarget.inputId);
-    if (el) el.value = val;
+    if (el) {
+      el.value = val;
+      const key = el.dataset.key, month = el.dataset.month, idx = parseInt(el.dataset.idx);
+      if (key && month && !isNaN(idx)) saveInlineValue(key, month, idx);
+    }
   }
   document.getElementById('np-overlay').classList.remove('open');
 }
